@@ -44,13 +44,7 @@ class MainActivity : AppCompatActivity() {
         appsList = findViewById(R.id.apps_list)
         appsList.layoutManager = GridLayoutManager(this, 4)
 
-        val apps = packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER), 0).toMutableList()
-        items = apps.toMutableList()
-
-        // ... (Your existing code for loading order) ...
-
-        val adapter = AppsAdapter(items)
-        appsList.adapter = adapter
+        refreshApps()
 
         val callback = object : ItemTouchHelper.Callback() {
             // This method is called as an item is dragged over others
@@ -159,6 +153,49 @@ class MainActivity : AppCompatActivity() {
 
         itemTouchHelper = ItemTouchHelper(callback)
         itemTouchHelper.attachToRecyclerView(appsList)
+    }
+
+    fun refreshApps() {
+        val apps = packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER), 0)
+        
+        // If items is not initialized, initialize it with all apps
+        if (!::items.isInitialized) {
+            items = apps.toMutableList<Any>()
+            // TODO: Load order from prefs here if needed
+        } else {
+            // Update items list while maintaining existing items (folders and ordered apps)
+            val currentPackages = mutableSetOf<String>()
+            val newItems = mutableListOf<Any>()
+            
+            // First, keep existing folders and apps that are still installed
+            for (item in items) {
+                if (item is Folder) {
+                    newItems.add(item)
+                } else if (item is ResolveInfo) {
+                    val packageName = item.activityInfo.packageName
+                    if (apps.any { it.activityInfo.packageName == packageName }) {
+                        newItems.add(item)
+                        currentPackages.add(packageName)
+                    }
+                }
+            }
+            
+            // Then, add any new apps that weren't in the list
+            for (app in apps) {
+                if (!currentPackages.contains(app.activityInfo.packageName)) {
+                    newItems.add(app)
+                }
+            }
+            
+            items.clear()
+            items.addAll(newItems)
+        }
+        
+        if (appsList.adapter == null) {
+            appsList.adapter = AppsAdapter(items)
+        } else {
+            appsList.adapter?.notifyDataSetChanged()
+        }
     }
 
     private fun saveAppOrder() {
