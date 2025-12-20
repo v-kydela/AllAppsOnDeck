@@ -1,7 +1,11 @@
 package com.tharos.allappsondeck
 
+import android.annotation.SuppressLint
 import android.app.AlertDialog
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ResolveInfo
 import android.os.Bundle
 import android.provider.Settings
@@ -13,6 +17,7 @@ import android.widget.ImageView
 import android.widget.PopupMenu
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.core.net.toUri
 import androidx.recyclerview.widget.GridLayoutManager
@@ -29,6 +34,12 @@ class MainActivity : AppCompatActivity() {
 
     // Variable to track which item we are dragging over for folder creation
     private var dropTargetViewHolder: RecyclerView.ViewHolder? = null
+
+    private val refreshReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            refreshApps()
+        }
+    }
 
     companion object {
         private const val PREFS_NAME = "AppOrder"
@@ -153,14 +164,23 @@ class MainActivity : AppCompatActivity() {
 
         itemTouchHelper = ItemTouchHelper(callback)
         itemTouchHelper.attachToRecyclerView(appsList)
+
+        val intentFilter = IntentFilter("com.tharos.allappsondeck.REFRESH_APPS")
+        ContextCompat.registerReceiver(this, refreshReceiver, intentFilter, ContextCompat.RECEIVER_NOT_EXPORTED)
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        unregisterReceiver(refreshReceiver)
+    }
+
+    @SuppressLint("NotifyDataSetChanged")
     fun refreshApps() {
         val apps = packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER), 0)
         
         // If items is not initialized, initialize it with all apps
         if (!::items.isInitialized) {
-            items = apps.toMutableList<Any>()
+            items = apps.toMutableList()
             // TODO: Load order from prefs here if needed
         } else {
             // Update items list while maintaining existing items (folders and ordered apps)
