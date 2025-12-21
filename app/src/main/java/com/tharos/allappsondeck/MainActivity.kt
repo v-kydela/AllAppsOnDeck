@@ -16,6 +16,7 @@ import android.widget.EditText
 import android.widget.ImageView
 import android.widget.PopupMenu
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
@@ -177,11 +178,11 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("NotifyDataSetChanged")
     fun refreshApps() {
         val apps = packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER), 0)
-        
+        val appMap = apps.associateBy { it.activityInfo.packageName }
+
         // If items is not initialized, initialize it with all apps
         if (!::items.isInitialized) {
             items = apps.toMutableList()
-            // TODO: Load order from prefs here if needed
         } else {
             // Update items list while maintaining existing items (folders and ordered apps)
             val currentPackages = mutableSetOf<String>()
@@ -193,8 +194,9 @@ class MainActivity : AppCompatActivity() {
                     newItems.add(item)
                 } else if (item is ResolveInfo) {
                     val packageName = item.activityInfo.packageName
-                    if (apps.any { it.activityInfo.packageName == packageName }) {
-                        newItems.add(item)
+                    val freshApp = appMap[packageName]
+                    if (freshApp != null) {
+                        newItems.add(freshApp)
                         currentPackages.add(packageName)
                     }
                 }
@@ -260,8 +262,14 @@ class MainActivity : AppCompatActivity() {
                 if (pos != RecyclerView.NO_POSITION) {
                     val item = items[pos]
                     if (item is ResolveInfo) {
-                        val launchIntent = packageManager.getLaunchIntentForPackage(item.activityInfo.packageName)
-                        startActivity(launchIntent)
+                        val packageName = item.activityInfo.packageName
+                        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+                        if (launchIntent != null) {
+                            startActivity(launchIntent)
+                        } else {
+                            Toast.makeText(this@MainActivity, "App not found", Toast.LENGTH_SHORT).show()
+                            refreshApps()
+                        }
                     }
                 }
             }
