@@ -29,6 +29,13 @@ class FolderActivity : AppCompatActivity() {
             intent.getParcelableExtra("folder")
         }!!
 
+        findViewById<TextView>(R.id.folder_title).text = folder.name
+
+        // Close when clicking outside the card
+        findViewById<View>(R.id.outside_touch_area).setOnClickListener {
+            finish()
+        }
+
         appsList = findViewById(R.id.apps_list)
         appsList.layoutManager = GridLayoutManager(this, 4)
 
@@ -41,8 +48,6 @@ class FolderActivity : AppCompatActivity() {
         val folderApps = allApps.filter { app -> folder.apps.contains(app.activityInfo.packageName) }
 
         appsList.adapter = AppsAdapter(folderApps)
-
-        supportActionBar?.title = folder.name
     }
 
     inner class AppsAdapter(private val apps: List<ResolveInfo>) : RecyclerView.Adapter<AppsAdapter.ViewHolder>() {
@@ -61,6 +66,7 @@ class FolderActivity : AppCompatActivity() {
                     val app = apps[pos]
                     val launchIntent = packageManager.getLaunchIntentForPackage(app.activityInfo.packageName)
                     startActivity(launchIntent)
+                    finish() // Close folder after launching app
                 }
             }
         }

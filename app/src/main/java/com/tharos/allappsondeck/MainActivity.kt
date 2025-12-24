@@ -285,9 +285,27 @@ class MainActivity : AppCompatActivity() {
 
                 popupMenu = PopupMenu(v.context, v)
                 popupMenu?.setOnDismissListener { popupMenu = null }
+                popupMenu?.menu?.add("Create Folder")
                 popupMenu?.menu?.add("More Info")
                 popupMenu?.setOnMenuItemClickListener { menuItem ->
                     when (menuItem.title) {
+                        "Create Folder" -> {
+                            val editText = EditText(this@MainActivity)
+                            editText.hint = "Folder Name"
+                            AlertDialog.Builder(this@MainActivity)
+                                .setTitle("New Folder")
+                                .setView(editText)
+                                .setPositiveButton("Create") { _, _ ->
+                                    val name = editText.text.toString().ifEmpty { "New Folder" }
+                                    val newFolder = Folder(name, mutableListOf(item.activityInfo.packageName))
+                                    items[pos] = newFolder
+                                    notifyItemChanged(pos)
+                                    saveAppOrder()
+                                }
+                                .setNegativeButton("Cancel", null)
+                                .show()
+                            true
+                        }
                         "More Info" -> {
                             val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
                             intent.data = "package:${item.activityInfo.packageName}".toUri()

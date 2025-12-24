@@ -27,7 +27,9 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
-        <activity android:name=".FolderActivity" />
+        <activity
+            android:name=".FolderActivity"
+            android:theme="@style/Theme.AllAppsOnDeck.FolderPopup" />
 
         <receiver
             android:name=".AppInstallReceiver"
