@@ -33,7 +33,7 @@ class MainActivity : AppCompatActivity() {
     private var isActuallyMoving = false
     private lateinit var items: MutableList<Any>
 
-    // Variable to track which item we are dragging over for folder creation
+    // Variable to track which item we are dragging over for folder creation/addition
     private var dropTargetViewHolder: RecyclerView.ViewHolder? = null
 
     private val refreshReceiver = object : BroadcastReceiver() {
@@ -71,8 +71,12 @@ class MainActivity : AppCompatActivity() {
                 if (target != null && target.bindingAdapterPosition != RecyclerView.NO_POSITION) {
                     val fromPos = selected.bindingAdapterPosition
                     val toPos = target.bindingAdapterPosition
-                    // Only allow dropping an app onto another app to create a folder
-                    dropTargetViewHolder = if (fromPos != RecyclerView.NO_POSITION && toPos != RecyclerView.NO_POSITION && items[fromPos] is ResolveInfo && items[toPos] is ResolveInfo) {
+                    
+                    val draggedItem = items[fromPos]
+                    val targetItem = items[toPos]
+
+                    // Allow dropping an app onto another app (to create a folder) or onto an existing folder
+                    dropTargetViewHolder = if (draggedItem is ResolveInfo && (targetItem is ResolveInfo || targetItem is Folder)) {
                         target
                     } else {
                         null
@@ -137,20 +141,29 @@ class MainActivity : AppCompatActivity() {
                         val draggedItem = items[fromPosition]
                         val targetItem = items[toPosition]
 
-                        // If an app is dropped on another app, create a folder
-                        if (draggedItem is ResolveInfo && targetItem is ResolveInfo) {
-                            // Create a new folder
-                            val folderApps = mutableListOf(targetItem.activityInfo.packageName, draggedItem.activityInfo.packageName)
-                            val newFolder = Folder("New Folder", folderApps)
+                        if (draggedItem is ResolveInfo) {
+                            if (targetItem is ResolveInfo) {
+                                // Create a new folder
+                                val folderApps = mutableListOf(targetItem.activityInfo.packageName, draggedItem.activityInfo.packageName)
+                                val newFolder = Folder("New Folder", folderApps)
 
-                            // Replace the target item with the new folder
-                            items[toPosition] = newFolder
-                            // Remove the dragged item from its original position (before the add)
-                            items.removeAt(fromPosition)
+                                // Replace the target item with the new folder
+                                items[toPosition] = newFolder
+                                // Remove the dragged item from its original position
+                                items.removeAt(fromPosition)
 
-                            // Notify adapter of changes
-                            appsList.adapter?.notifyItemChanged(toPosition)
-                            appsList.adapter?.notifyItemRemoved(fromPosition)
+                                appsList.adapter?.notifyItemChanged(toPosition)
+                                appsList.adapter?.notifyItemRemoved(fromPosition)
+                            } else if (targetItem is Folder) {
+                                // Add app to existing folder
+                                targetItem.apps.add(draggedItem.activityInfo.packageName)
+                                // Remove the dragged app from the main list
+                                items.removeAt(fromPosition)
+
+                                appsList.adapter?.notifyItemRemoved(fromPosition)
+                                // Optionally notify that folder was updated (though icon might not change)
+                                appsList.adapter?.notifyItemChanged(toPosition)
+                            }
                         }
                     }
                 }
