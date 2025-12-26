@@ -8,6 +8,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
+import android.widget.PopupMenu
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.GridLayoutManager
@@ -39,6 +40,10 @@ class FolderActivity : AppCompatActivity() {
         appsList = findViewById(R.id.apps_list)
         appsList.layoutManager = GridLayoutManager(this, 4)
 
+        refreshList()
+    }
+
+    private fun refreshList() {
         val mainIntent = Intent(Intent.ACTION_MAIN, null)
         mainIntent.addCategory(Intent.CATEGORY_LAUNCHER)
 
@@ -52,12 +57,13 @@ class FolderActivity : AppCompatActivity() {
 
     inner class AppsAdapter(private val apps: List<ResolveInfo>) : RecyclerView.Adapter<AppsAdapter.ViewHolder>() {
 
-        inner class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView), View.OnClickListener {
+        inner class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView), View.OnClickListener, View.OnLongClickListener {
             val appName: TextView = itemView.findViewById(R.id.app_name)
             val appIcon: ImageView = itemView.findViewById(R.id.app_icon)
 
             init {
                 itemView.setOnClickListener(this)
+                itemView.setOnLongClickListener(this)
             }
 
             override fun onClick(v: View?) {
@@ -68,6 +74,36 @@ class FolderActivity : AppCompatActivity() {
                     startActivity(launchIntent)
                     finish() // Close folder after launching app
                 }
+            }
+
+            override fun onLongClick(v: View): Boolean {
+                val pos = bindingAdapterPosition
+                if (pos == RecyclerView.NO_POSITION) return false
+
+                val app = apps[pos]
+                val popup = PopupMenu(this@FolderActivity, v)
+                popup.menu.add("Remove from Folder")
+                popup.setOnMenuItemClickListener { menuItem ->
+                    if (menuItem.title == "Remove from Folder") {
+                        folder.apps.remove(app.activityInfo.packageName)
+                        
+                        // Notify MainActivity that the folder has changed
+                        val resultIntent = Intent()
+                        resultIntent.putExtra("updated_folder", folder)
+                        setResult(RESULT_OK, resultIntent)
+                        
+                        if (folder.apps.isEmpty()) {
+                            finish()
+                        } else {
+                            refreshList()
+                        }
+                        true
+                    } else {
+                        false
+                    }
+                }
+                popup.show()
+                return true
             }
         }
 

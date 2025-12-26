@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ResolveInfo
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.LayoutInflater
@@ -17,6 +18,7 @@ import android.widget.ImageView
 import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
@@ -39,6 +41,31 @@ class MainActivity : AppCompatActivity() {
     private val refreshReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             refreshApps()
+        }
+    }
+
+    private val folderResultLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == RESULT_OK) {
+            val updatedFolder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                result.data?.getParcelableExtra("updated_folder", Folder::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                result.data?.getParcelableExtra("updated_folder")
+            }
+            if (updatedFolder != null) {
+                // Find and update the folder in our list
+                val index = items.indexOfFirst { it is Folder && it.name == updatedFolder.name }
+                if (index != -1) {
+                    if (updatedFolder.apps.isEmpty()) {
+                        items.removeAt(index)
+                    } else {
+                        items[index] = updatedFolder
+                    }
+                    // Refresh will re-add any apps removed from folder to the main list
+                    refreshApps()
+                    saveAppOrder()
+                }
+            }
         }
     }
 
@@ -205,6 +232,7 @@ class MainActivity : AppCompatActivity() {
             for (item in items) {
                 if (item is Folder) {
                     newItems.add(item)
+                    currentPackages.addAll(item.apps)
                 } else if (item is ResolveInfo) {
                     val packageName = item.activityInfo.packageName
                     val freshApp = appMap[packageName]
@@ -354,7 +382,7 @@ class MainActivity : AppCompatActivity() {
                     if (item is Folder) {
                         val intent = Intent(this@MainActivity, FolderActivity::class.java)
                         intent.putExtra("folder", item)
-                        startActivity(intent)
+                        folderResultLauncher.launch(intent)
                     }
                 }
             }
