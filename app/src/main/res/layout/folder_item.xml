@@ -6,12 +6,10 @@
     android:orientation="vertical"
     android:padding="8dp">
 
-    <ImageView
+    <com.tharos.allappsondeck.FolderIconView
         android:id="@+id/folder_icon"
         android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:contentDescription="@null"
-        android:src="@drawable/ic_folder" />
+        android:layout_height="48dp" />
 
     <TextView
         android:id="@+id/folder_name"

@@ -364,6 +364,7 @@ class MainActivity : AppCompatActivity() {
 
         inner class FolderViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView), View.OnClickListener, View.OnLongClickListener {
             val folderName: TextView = itemView.findViewById(R.id.folder_name)
+            val folderIcon: FolderIconView = itemView.findViewById(R.id.folder_icon)
 
             init {
                 itemView.setOnClickListener(this)
@@ -448,6 +449,16 @@ class MainActivity : AppCompatActivity() {
                 is FolderViewHolder -> {
                     val folder = items[position] as Folder
                     holder.folderName.text = folder.name
+                    
+                    // Fetch icons for the apps in the folder
+                    val folderIcons = folder.apps.take(4).mapNotNull { packageName ->
+                        try {
+                            packageManager.getApplicationIcon(packageName)
+                        } catch (_: Exception) {
+                            null
+                        }
+                    }
+                    holder.folderIcon.setIcons(folderIcons)
                 }
             }
         }
