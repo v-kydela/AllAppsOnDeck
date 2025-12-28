@@ -6,6 +6,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ApplicationInfo
 import android.content.pm.ResolveInfo
 import android.os.Build
 import android.os.Bundle
@@ -172,7 +173,8 @@ class MainActivity : AppCompatActivity() {
                             if (targetItem is ResolveInfo) {
                                 // Create a new folder
                                 val folderApps = mutableListOf(targetItem.activityInfo.packageName, draggedItem.activityInfo.packageName)
-                                val newFolder = Folder("New Folder", folderApps)
+                                val suggestedName = getFolderNameForApps(folderApps)
+                                val newFolder = Folder(suggestedName, folderApps)
 
                                 // Replace the target item with the new folder
                                 items[toPosition] = newFolder
@@ -208,6 +210,43 @@ class MainActivity : AppCompatActivity() {
 
         val intentFilter = IntentFilter("com.tharos.allappsondeck.REFRESH_APPS")
         ContextCompat.registerReceiver(this, refreshReceiver, intentFilter, ContextCompat.RECEIVER_NOT_EXPORTED)
+    }
+
+    private fun getFolderNameForApps(packageNames: List<String>): String {
+        val categories = packageNames.mapNotNull { pkg ->
+            try {
+                val appInfo = packageManager.getApplicationInfo(pkg, 0)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    when (appInfo.category) {
+                        ApplicationInfo.CATEGORY_GAME -> "Games"
+                        ApplicationInfo.CATEGORY_AUDIO -> "Audio"
+                        ApplicationInfo.CATEGORY_VIDEO -> "Video"
+                        ApplicationInfo.CATEGORY_IMAGE -> "Images"
+                        ApplicationInfo.CATEGORY_SOCIAL -> "Social"
+                        ApplicationInfo.CATEGORY_NEWS -> "News"
+                        ApplicationInfo.CATEGORY_MAPS -> "Maps"
+                        ApplicationInfo.CATEGORY_PRODUCTIVITY -> "Productivity"
+                        ApplicationInfo.CATEGORY_ACCESSIBILITY -> "Accessibility"
+                        else -> null
+                    }
+                } else {
+                    null
+                }
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+        if (categories.isEmpty()) return "New Folder"
+        
+        // If all apps share a category, use it
+        val firstCategory = categories.first()
+        if (categories.all { it == firstCategory }) {
+            return firstCategory
+        }
+        
+        // Otherwise, find the most frequent category
+        return categories.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key ?: "New Folder"
     }
 
     override fun onDestroy() {
@@ -331,13 +370,14 @@ class MainActivity : AppCompatActivity() {
                 popupMenu?.setOnMenuItemClickListener { menuItem ->
                     when (menuItem.title) {
                         "Create Folder" -> {
+                            val suggestedName = getFolderNameForApps(listOf(item.activityInfo.packageName))
                             val editText = EditText(this@MainActivity)
-                            editText.hint = "Folder Name"
+                            editText.setText(suggestedName)
                             AlertDialog.Builder(this@MainActivity)
                                 .setTitle("New Folder")
                                 .setView(editText)
                                 .setPositiveButton("Create") { _, _ ->
-                                    val name = editText.text.toString().ifEmpty { "New Folder" }
+                                    val name = editText.text.toString().ifEmpty { suggestedName }
                                     val newFolder = Folder(name, mutableListOf(item.activityInfo.packageName))
                                     items[pos] = newFolder
                                     notifyItemChanged(pos)
