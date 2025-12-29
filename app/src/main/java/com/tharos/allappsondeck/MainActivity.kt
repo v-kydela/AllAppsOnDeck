@@ -226,7 +226,6 @@ class MainActivity : AppCompatActivity() {
                         ApplicationInfo.CATEGORY_NEWS -> "News"
                         ApplicationInfo.CATEGORY_MAPS -> "Maps"
                         ApplicationInfo.CATEGORY_PRODUCTIVITY -> "Productivity"
-                        ApplicationInfo.CATEGORY_ACCESSIBILITY -> "Accessibility"
                         else -> null
                     }
                 } else {
@@ -247,6 +246,47 @@ class MainActivity : AppCompatActivity() {
         
         // Otherwise, find the most frequent category
         return categories.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key ?: "New Folder"
+    }
+
+    @SuppressLint("NotifyDataSetChanged")
+    private fun autoSortApps() {
+        val apps = packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER), 0)
+        
+        val categoryGroups = apps.groupBy { app ->
+            try {
+                val appInfo = packageManager.getApplicationInfo(app.activityInfo.packageName, 0)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    when (appInfo.category) {
+                        ApplicationInfo.CATEGORY_GAME -> "Games"
+                        ApplicationInfo.CATEGORY_AUDIO -> "Audio"
+                        ApplicationInfo.CATEGORY_VIDEO -> "Video"
+                        ApplicationInfo.CATEGORY_IMAGE -> "Images"
+                        ApplicationInfo.CATEGORY_SOCIAL -> "Social"
+                        ApplicationInfo.CATEGORY_NEWS -> "News"
+                        ApplicationInfo.CATEGORY_MAPS -> "Maps"
+                        ApplicationInfo.CATEGORY_PRODUCTIVITY -> "Productivity"
+                        else -> "Misc"
+                    }
+                } else "Misc"
+            } catch (_: Exception) { "Misc" }
+        }
+
+        val newItems = mutableListOf<Any>()
+        
+        categoryGroups.forEach { (category, groupApps) ->
+            if (category != "Misc" && groupApps.size > 1) {
+                val packageNames = groupApps.map { it.activityInfo.packageName }.toMutableList()
+                newItems.add(Folder(category, packageNames))
+            } else {
+                newItems.addAll(groupApps)
+            }
+        }
+
+        items.clear()
+        items.addAll(newItems)
+        appsList.adapter?.notifyDataSetChanged()
+        saveAppOrder()
+        Toast.makeText(this, "Apps sorted into folders", Toast.LENGTH_SHORT).show()
     }
 
     override fun onDestroy() {
@@ -365,10 +405,15 @@ class MainActivity : AppCompatActivity() {
 
                 popupMenu = PopupMenu(v.context, v)
                 popupMenu?.setOnDismissListener { popupMenu = null }
+                popupMenu?.menu?.add("Auto Sort")
                 popupMenu?.menu?.add("Create Folder")
                 popupMenu?.menu?.add("More Info")
                 popupMenu?.setOnMenuItemClickListener { menuItem ->
                     when (menuItem.title) {
+                        "Auto Sort" -> {
+                            autoSortApps()
+                            true
+                        }
                         "Create Folder" -> {
                             val suggestedName = getFolderNameForApps(listOf(item.activityInfo.packageName))
                             val editText = EditText(this@MainActivity)
