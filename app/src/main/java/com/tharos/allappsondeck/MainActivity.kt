@@ -82,7 +82,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         appsList = findViewById(R.id.apps_list)
-        appsList.layoutManager = GridLayoutManager(this, 4)
+        appsList.layoutManager = GridLayoutManager(this, 4, GridLayoutManager.VERTICAL, true)
 
         refreshApps()
 
