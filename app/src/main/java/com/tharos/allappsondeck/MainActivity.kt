@@ -72,7 +72,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val PREFS_NAME = "AppOrder"
-        private const val ORDER_KEY = "order"
+        private const val LAYOUT_KEY = "app_layout_v4" // Upgraded key for unified state
         private const val TYPE_APP = 0
         private const val TYPE_FOLDER = 1
     }
@@ -250,7 +250,8 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("NotifyDataSetChanged")
     private fun autoSortApps() {
-        val apps = packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER), 0)
+        val mainIntent = Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER)
+        val apps = packageManager.queryIntentActivities(mainIntent, 0)
         
         val categoryGroups = apps.groupBy { app ->
             try {
@@ -296,12 +297,13 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("NotifyDataSetChanged")
     fun refreshApps() {
-        val apps = packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER), 0)
+        val mainIntent = Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER)
+        val apps = packageManager.queryIntentActivities(mainIntent, 0)
         val appMap = apps.associateBy { it.activityInfo.packageName }
 
-        // If items is not initialized, initialize it with all apps
         if (!::items.isInitialized) {
-            items = apps.toMutableList()
+            items = mutableListOf()
+            loadAppLayout(apps, appMap)
         } else {
             // Update items list while maintaining existing items (folders and ordered apps)
             val currentPackages = mutableSetOf<String>()
@@ -310,14 +312,16 @@ class MainActivity : AppCompatActivity() {
             // First, keep existing folders and apps that are still installed
             for (item in items) {
                 if (item is Folder) {
-                    newItems.add(item)
-                    currentPackages.addAll(item.apps)
+                    item.apps.removeAll { !appMap.containsKey(it) }
+                    if (item.apps.isNotEmpty()) {
+                        newItems.add(item)
+                        currentPackages.addAll(item.apps)
+                    }
                 } else if (item is ResolveInfo) {
-                    val packageName = item.activityInfo.packageName
-                    val freshApp = appMap[packageName]
-                    if (freshApp != null) {
-                        newItems.add(freshApp)
-                        currentPackages.add(packageName)
+                    val pkg = item.activityInfo.packageName
+                    if (appMap.containsKey(pkg)) {
+                        newItems.add(appMap[pkg]!!)
+                        currentPackages.add(pkg)
                     }
                 }
             }
@@ -340,17 +344,46 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun saveAppOrder() {
-        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit {
-            val order = items.joinToString(",") { item ->
-                when (item) {
-                    is ResolveInfo -> item.activityInfo.packageName
-                    is Folder -> item.name
-                    else -> ""
+    private fun loadAppLayout(allApps: List<ResolveInfo>, appMap: Map<String, ResolveInfo>) {
+        val layoutString = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(LAYOUT_KEY, null)
+        if (layoutString == null) {
+            items.addAll(allApps)
+            return
+        }
+
+        val seenPackages = mutableSetOf<String>()
+        layoutString.split("|").forEach { entry ->
+            if (entry.startsWith("F:")) {
+                val parts = entry.substring(2).split(":")
+                if (parts.size == 2) {
+                    val folderName = parts[0]
+                    val folderApps = parts[1].split(",").filter { appMap.containsKey(it) }.toMutableList()
+                    if (folderApps.isNotEmpty()) {
+                        items.add(Folder(folderName, folderApps))
+                        seenPackages.addAll(folderApps)
+                    }
+                }
+            } else if (entry.startsWith("A:")) {
+                val pkg = entry.substring(2)
+                if (appMap.containsKey(pkg)) {
+                    items.add(appMap[pkg]!!)
+                    seenPackages.add(pkg)
                 }
             }
-            putString(ORDER_KEY, order)
         }
+
+        allApps.forEach { if (!seenPackages.contains(it.activityInfo.packageName)) items.add(it) }
+    }
+
+    private fun saveAppOrder() {
+        val layoutString = items.joinToString("|") { item ->
+            when (item) {
+                is ResolveInfo -> "A:${item.activityInfo.packageName}"
+                is Folder -> "F:${item.name}:${item.apps.joinToString(",")}"
+                else -> ""
+            }
+        }
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit { putString(LAYOUT_KEY, layoutString) }
     }
 
     inner class AppsAdapter(private val items: MutableList<Any>) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
@@ -423,8 +456,7 @@ class MainActivity : AppCompatActivity() {
                                 .setView(editText)
                                 .setPositiveButton("Create") { _, _ ->
                                     val name = editText.text.toString().ifEmpty { suggestedName }
-                                    val newFolder = Folder(name, mutableListOf(item.activityInfo.packageName))
-                                    items[pos] = newFolder
+                                    items[pos] = Folder(name, mutableListOf(item.activityInfo.packageName))
                                     notifyItemChanged(pos)
                                     saveAppOrder()
                                 }
