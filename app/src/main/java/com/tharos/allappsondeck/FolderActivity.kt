@@ -4,6 +4,7 @@ import android.content.Intent
 import android.content.pm.ResolveInfo
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -11,6 +12,7 @@ import android.widget.ImageView
 import android.widget.PopupMenu
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.net.toUri
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 
@@ -83,23 +85,32 @@ class FolderActivity : AppCompatActivity() {
                 val app = apps[pos]
                 val popup = PopupMenu(this@FolderActivity, v)
                 popup.menu.add("Remove from Folder")
+                popup.menu.add("More Info")
                 popup.setOnMenuItemClickListener { menuItem ->
-                    if (menuItem.title == "Remove from Folder") {
-                        folder.apps.remove(app.activityInfo.packageName)
-                        
-                        // Notify MainActivity that the folder has changed
-                        val resultIntent = Intent()
-                        resultIntent.putExtra("updated_folder", folder)
-                        setResult(RESULT_OK, resultIntent)
-                        
-                        if (folder.apps.isEmpty()) {
-                            finish()
-                        } else {
-                            refreshList()
+                    when (menuItem.title) {
+                        "Remove from Folder" -> {
+                            folder.apps.remove(app.activityInfo.packageName)
+                            
+                            // Notify MainActivity that the folder has changed
+                            val resultIntent = Intent()
+                            resultIntent.putExtra("updated_folder", folder)
+                            setResult(RESULT_OK, resultIntent)
+                            
+                            if (folder.apps.isEmpty()) {
+                                finish()
+                            } else {
+                                refreshList()
+                            }
+                            true
                         }
-                        true
-                    } else {
-                        false
+                        "More Info" -> {
+                            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                            intent.data = "package:${app.activityInfo.packageName}".toUri()
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            startActivity(intent)
+                            true
+                        }
+                        else -> false
                     }
                 }
                 popup.show()
