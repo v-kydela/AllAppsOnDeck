@@ -10,7 +10,8 @@ class AppInstallReceiver : BroadcastReceiver() {
         if (action == Intent.ACTION_PACKAGE_ADDED ||
             action == Intent.ACTION_PACKAGE_REMOVED ||
             action == Intent.ACTION_PACKAGE_REPLACED ||
-            action == Intent.ACTION_PACKAGE_CHANGED) {
+            action == Intent.ACTION_PACKAGE_CHANGED ||
+            action == Intent.ACTION_PACKAGE_FULLY_REMOVED) {
             
             // Send a broadcast to tell MainActivity to refresh
             val refreshIntent = Intent("com.tharos.allappsondeck.REFRESH_APPS")
