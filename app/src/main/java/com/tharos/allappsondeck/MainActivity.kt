@@ -209,7 +209,11 @@ class MainActivity : AppCompatActivity() {
         itemTouchHelper.attachToRecyclerView(appsList)
 
         val intentFilter = IntentFilter("com.tharos.allappsondeck.REFRESH_APPS")
-        ContextCompat.registerReceiver(this, refreshReceiver, intentFilter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.registerReceiver(this, refreshReceiver, intentFilter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(refreshReceiver, intentFilter)
+        }
     }
 
     private fun getFolderNameForApps(packageNames: List<String>): String {
@@ -250,8 +254,7 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("NotifyDataSetChanged")
     private fun autoSortApps() {
-        val mainIntent = Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER)
-        val apps = packageManager.queryIntentActivities(mainIntent, 0)
+        val apps = getInstalledLauncherApps()
         
         val categoryGroups = apps.groupBy { app ->
             try {
@@ -295,10 +298,14 @@ class MainActivity : AppCompatActivity() {
         unregisterReceiver(refreshReceiver)
     }
 
+    private fun getInstalledLauncherApps(): List<ResolveInfo> {
+        val mainIntent = Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER)
+        return packageManager.queryIntentActivities(mainIntent, 0).filter { it.activityInfo.packageName != packageName }
+    }
+
     @SuppressLint("NotifyDataSetChanged")
     fun refreshApps() {
-        val mainIntent = Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER)
-        val apps = packageManager.queryIntentActivities(mainIntent, 0)
+        val apps = getInstalledLauncherApps()
         val appMap = apps.associateBy { it.activityInfo.packageName }
 
         if (!::items.isInitialized) {
