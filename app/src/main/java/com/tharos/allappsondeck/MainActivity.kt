@@ -209,11 +209,7 @@ class MainActivity : AppCompatActivity() {
         itemTouchHelper.attachToRecyclerView(appsList)
 
         val intentFilter = IntentFilter("com.tharos.allappsondeck.REFRESH_APPS")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ContextCompat.registerReceiver(this, refreshReceiver, intentFilter, ContextCompat.RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(refreshReceiver, intentFilter)
-        }
+        ContextCompat.registerReceiver(this, refreshReceiver, intentFilter, ContextCompat.RECEIVER_NOT_EXPORTED)
     }
 
     private fun getFolderNameForApps(packageNames: List<String>): String {
@@ -559,7 +555,7 @@ class MainActivity : AppCompatActivity() {
                     val view = LayoutInflater.from(parent.context).inflate(R.layout.folder_item, parent, false)
                     FolderViewHolder(view)
                 }
-                else -> throw IllegalArgumentException("Invalid view type")
+                else -> throw IllegalArgumentException("Invalid view type: $viewType")
             }
         }
 
