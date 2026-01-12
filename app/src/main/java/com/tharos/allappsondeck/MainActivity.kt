@@ -8,14 +8,12 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
 import android.content.pm.ResolveInfo
-import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
-import android.widget.ImageView
 import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
@@ -47,12 +45,7 @@ class MainActivity : AppCompatActivity() {
 
     private val folderResultLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == RESULT_OK) {
-            val updatedFolder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                result.data?.getParcelableExtra("updated_folder", Folder::class.java)
-            } else {
-                @Suppress("DEPRECATION")
-                result.data?.getParcelableExtra("updated_folder")
-            }
+            val updatedFolder = result.data?.getParcelableExtra("updated_folder", Folder::class.java)
             if (updatedFolder != null) {
                 // Find and update the folder in our list
                 val index = items.indexOfFirst { it is Folder && it.name == updatedFolder.name }
@@ -216,20 +209,16 @@ class MainActivity : AppCompatActivity() {
         val categories = packageNames.mapNotNull { pkg ->
             try {
                 val appInfo = packageManager.getApplicationInfo(pkg, 0)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    when (appInfo.category) {
-                        ApplicationInfo.CATEGORY_GAME -> "Games"
-                        ApplicationInfo.CATEGORY_AUDIO -> "Audio"
-                        ApplicationInfo.CATEGORY_VIDEO -> "Video"
-                        ApplicationInfo.CATEGORY_IMAGE -> "Images"
-                        ApplicationInfo.CATEGORY_SOCIAL -> "Social"
-                        ApplicationInfo.CATEGORY_NEWS -> "News"
-                        ApplicationInfo.CATEGORY_MAPS -> "Maps"
-                        ApplicationInfo.CATEGORY_PRODUCTIVITY -> "Productivity"
-                        else -> null
-                    }
-                } else {
-                    null
+                when (appInfo.category) {
+                    ApplicationInfo.CATEGORY_GAME -> "Games"
+                    ApplicationInfo.CATEGORY_AUDIO -> "Audio"
+                    ApplicationInfo.CATEGORY_VIDEO -> "Video"
+                    ApplicationInfo.CATEGORY_IMAGE -> "Images"
+                    ApplicationInfo.CATEGORY_SOCIAL -> "Social"
+                    ApplicationInfo.CATEGORY_NEWS -> "News"
+                    ApplicationInfo.CATEGORY_MAPS -> "Maps"
+                    ApplicationInfo.CATEGORY_PRODUCTIVITY -> "Productivity"
+                    else -> null
                 }
             } catch (_: Exception) {
                 null
@@ -255,19 +244,17 @@ class MainActivity : AppCompatActivity() {
         val categoryGroups = apps.groupBy { app ->
             try {
                 val appInfo = packageManager.getApplicationInfo(app.activityInfo.packageName, 0)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    when (appInfo.category) {
-                        ApplicationInfo.CATEGORY_GAME -> "Games"
-                        ApplicationInfo.CATEGORY_AUDIO -> "Audio"
-                        ApplicationInfo.CATEGORY_VIDEO -> "Video"
-                        ApplicationInfo.CATEGORY_IMAGE -> "Images"
-                        ApplicationInfo.CATEGORY_SOCIAL -> "Social"
-                        ApplicationInfo.CATEGORY_NEWS -> "News"
-                        ApplicationInfo.CATEGORY_MAPS -> "Maps"
-                        ApplicationInfo.CATEGORY_PRODUCTIVITY -> "Productivity"
-                        else -> "Misc"
-                    }
-                } else "Misc"
+                when (appInfo.category) {
+                    ApplicationInfo.CATEGORY_GAME -> "Games"
+                    ApplicationInfo.CATEGORY_AUDIO -> "Audio"
+                    ApplicationInfo.CATEGORY_VIDEO -> "Video"
+                    ApplicationInfo.CATEGORY_IMAGE -> "Images"
+                    ApplicationInfo.CATEGORY_SOCIAL -> "Social"
+                    ApplicationInfo.CATEGORY_NEWS -> "News"
+                    ApplicationInfo.CATEGORY_MAPS -> "Maps"
+                    ApplicationInfo.CATEGORY_PRODUCTIVITY -> "Productivity"
+                    else -> "Misc"
+                }
             } catch (_: Exception) { "Misc" }
         }
 
@@ -401,9 +388,9 @@ class MainActivity : AppCompatActivity() {
 
         inner class AppViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView), View.OnClickListener, View.OnLongClickListener {
             val appName: TextView = itemView.findViewById(R.id.app_name)
-            val appIcon: ImageView = itemView.findViewById(R.id.app_icon)
 
             init {
+                (itemView as TextView).compoundDrawablePadding = 16
                 itemView.setOnClickListener(this)
                 itemView.setOnLongClickListener(this)
             }
@@ -564,7 +551,9 @@ class MainActivity : AppCompatActivity() {
                 is AppViewHolder -> {
                     val app = items[position] as ResolveInfo
                     holder.appName.text = app.loadLabel(packageManager)
-                    holder.appIcon.setImageDrawable(app.loadIcon(packageManager))
+                    val icon = app.loadIcon(packageManager)
+                    icon.setBounds(0, 0, 144, 144) // Setting icon size
+                    holder.appName.setCompoundDrawables(null, icon, null, null)
                 }
                 is FolderViewHolder -> {
                     val folder = items[position] as Folder
