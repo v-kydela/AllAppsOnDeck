@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
 import android.content.pm.ResolveInfo
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.LayoutInflater
@@ -45,7 +46,12 @@ class MainActivity : AppCompatActivity() {
 
     private val folderResultLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == RESULT_OK) {
-            val updatedFolder = result.data?.getParcelableExtra("updated_folder", Folder::class.java)
+            val updatedFolder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                result.data?.getParcelableExtra("updated_folder", Folder::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                result.data?.getParcelableExtra("updated_folder")
+            }
             if (updatedFolder != null) {
                 // Find and update the folder in our list
                 val index = items.indexOfFirst { it is Folder && it.name == updatedFolder.name }
@@ -209,16 +215,20 @@ class MainActivity : AppCompatActivity() {
         val categories = packageNames.mapNotNull { pkg ->
             try {
                 val appInfo = packageManager.getApplicationInfo(pkg, 0)
-                when (appInfo.category) {
-                    ApplicationInfo.CATEGORY_GAME -> "Games"
-                    ApplicationInfo.CATEGORY_AUDIO -> "Audio"
-                    ApplicationInfo.CATEGORY_VIDEO -> "Video"
-                    ApplicationInfo.CATEGORY_IMAGE -> "Images"
-                    ApplicationInfo.CATEGORY_SOCIAL -> "Social"
-                    ApplicationInfo.CATEGORY_NEWS -> "News"
-                    ApplicationInfo.CATEGORY_MAPS -> "Maps"
-                    ApplicationInfo.CATEGORY_PRODUCTIVITY -> "Productivity"
-                    else -> null
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    when (appInfo.category) {
+                        ApplicationInfo.CATEGORY_GAME -> "Games"
+                        ApplicationInfo.CATEGORY_AUDIO -> "Audio"
+                        ApplicationInfo.CATEGORY_VIDEO -> "Video"
+                        ApplicationInfo.CATEGORY_IMAGE -> "Images"
+                        ApplicationInfo.CATEGORY_SOCIAL -> "Social"
+                        ApplicationInfo.CATEGORY_NEWS -> "News"
+                        ApplicationInfo.CATEGORY_MAPS -> "Maps"
+                        ApplicationInfo.CATEGORY_PRODUCTIVITY -> "Productivity"
+                        else -> null
+                    }
+                } else {
+                    null
                 }
             } catch (_: Exception) {
                 null
@@ -244,17 +254,19 @@ class MainActivity : AppCompatActivity() {
         val categoryGroups = apps.groupBy { app ->
             try {
                 val appInfo = packageManager.getApplicationInfo(app.activityInfo.packageName, 0)
-                when (appInfo.category) {
-                    ApplicationInfo.CATEGORY_GAME -> "Games"
-                    ApplicationInfo.CATEGORY_AUDIO -> "Audio"
-                    ApplicationInfo.CATEGORY_VIDEO -> "Video"
-                    ApplicationInfo.CATEGORY_IMAGE -> "Images"
-                    ApplicationInfo.CATEGORY_SOCIAL -> "Social"
-                    ApplicationInfo.CATEGORY_NEWS -> "News"
-                    ApplicationInfo.CATEGORY_MAPS -> "Maps"
-                    ApplicationInfo.CATEGORY_PRODUCTIVITY -> "Productivity"
-                    else -> "Misc"
-                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    when (appInfo.category) {
+                        ApplicationInfo.CATEGORY_GAME -> "Games"
+                        ApplicationInfo.CATEGORY_AUDIO -> "Audio"
+                        ApplicationInfo.CATEGORY_VIDEO -> "Video"
+                        ApplicationInfo.CATEGORY_IMAGE -> "Images"
+                        ApplicationInfo.CATEGORY_SOCIAL -> "Social"
+                        ApplicationInfo.CATEGORY_NEWS -> "News"
+                        ApplicationInfo.CATEGORY_MAPS -> "Maps"
+                        ApplicationInfo.CATEGORY_PRODUCTIVITY -> "Productivity"
+                        else -> "Misc"
+                    }
+                } else "Misc"
             } catch (_: Exception) { "Misc" }
         }
 
@@ -552,7 +564,8 @@ class MainActivity : AppCompatActivity() {
                     val app = items[position] as ResolveInfo
                     holder.appName.text = app.loadLabel(packageManager)
                     val icon = app.loadIcon(packageManager)
-                    icon.setBounds(0, 0, 144, 144) // Setting icon size
+                    val iconSize = (48 * holder.itemView.context.resources.displayMetrics.density).toInt()
+                    icon.setBounds(0, 0, iconSize, iconSize)
                     holder.appName.setCompoundDrawables(null, icon, null, null)
                 }
                 is FolderViewHolder -> {
