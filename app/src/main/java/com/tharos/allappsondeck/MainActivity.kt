@@ -211,29 +211,29 @@ class MainActivity : AppCompatActivity() {
         ContextCompat.registerReceiver(this, refreshReceiver, intentFilter, ContextCompat.RECEIVER_NOT_EXPORTED)
     }
 
-    private fun getFolderNameForApps(packageNames: List<String>): String {
-        val categories = packageNames.mapNotNull { pkg ->
-            try {
-                val appInfo = packageManager.getApplicationInfo(pkg, 0)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    when (appInfo.category) {
-                        ApplicationInfo.CATEGORY_GAME -> "Games"
-                        ApplicationInfo.CATEGORY_AUDIO -> "Audio"
-                        ApplicationInfo.CATEGORY_VIDEO -> "Video"
-                        ApplicationInfo.CATEGORY_IMAGE -> "Images"
-                        ApplicationInfo.CATEGORY_SOCIAL -> "Social"
-                        ApplicationInfo.CATEGORY_NEWS -> "News"
-                        ApplicationInfo.CATEGORY_MAPS -> "Maps"
-                        ApplicationInfo.CATEGORY_PRODUCTIVITY -> "Productivity"
-                        else -> null
-                    }
-                } else {
-                    null
+    private fun getAppCategory(packageName: String): String? {
+        return try {
+            val appInfo = packageManager.getApplicationInfo(packageName, 0)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                when (appInfo.category) {
+                    ApplicationInfo.CATEGORY_GAME -> "Games"
+                    ApplicationInfo.CATEGORY_AUDIO -> "Audio"
+                    ApplicationInfo.CATEGORY_VIDEO -> "Video"
+                    ApplicationInfo.CATEGORY_IMAGE -> "Images"
+                    ApplicationInfo.CATEGORY_SOCIAL -> "Social"
+                    ApplicationInfo.CATEGORY_NEWS -> "News"
+                    ApplicationInfo.CATEGORY_MAPS -> "Maps"
+                    ApplicationInfo.CATEGORY_PRODUCTIVITY -> "Productivity"
+                    else -> null
                 }
-            } catch (_: Exception) {
-                null
-            }
+            } else null
+        } catch (_: Exception) {
+            null
         }
+    }
+
+    private fun getFolderNameForApps(packageNames: List<String>): String {
+        val categories = packageNames.mapNotNull { getAppCategory(it) }
 
         if (categories.isEmpty()) return "New Folder"
         
@@ -252,22 +252,7 @@ class MainActivity : AppCompatActivity() {
         val apps = getInstalledLauncherApps()
         
         val categoryGroups = apps.groupBy { app ->
-            try {
-                val appInfo = packageManager.getApplicationInfo(app.activityInfo.packageName, 0)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    when (appInfo.category) {
-                        ApplicationInfo.CATEGORY_GAME -> "Games"
-                        ApplicationInfo.CATEGORY_AUDIO -> "Audio"
-                        ApplicationInfo.CATEGORY_VIDEO -> "Video"
-                        ApplicationInfo.CATEGORY_IMAGE -> "Images"
-                        ApplicationInfo.CATEGORY_SOCIAL -> "Social"
-                        ApplicationInfo.CATEGORY_NEWS -> "News"
-                        ApplicationInfo.CATEGORY_MAPS -> "Maps"
-                        ApplicationInfo.CATEGORY_PRODUCTIVITY -> "Productivity"
-                        else -> "Misc"
-                    }
-                } else "Misc"
-            } catch (_: Exception) { "Misc" }
+            getAppCategory(app.activityInfo.packageName) ?: "Misc"
         }
 
         val newItems = mutableListOf<Any>()
