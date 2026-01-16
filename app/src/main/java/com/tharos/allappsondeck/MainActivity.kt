@@ -15,10 +15,10 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
@@ -41,31 +41,6 @@ class MainActivity : AppCompatActivity() {
     private val refreshReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             refreshApps()
-        }
-    }
-
-    private val folderResultLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == RESULT_OK) {
-            val updatedFolder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                result.data?.getParcelableExtra("updated_folder", Folder::class.java)
-            } else {
-                @Suppress("DEPRECATION")
-                result.data?.getParcelableExtra("updated_folder")
-            }
-            if (updatedFolder != null) {
-                // Find and update the folder in our list
-                val index = items.indexOfFirst { it is Folder && it.name == updatedFolder.name }
-                if (index != -1) {
-                    if (updatedFolder.apps.isEmpty()) {
-                        items.removeAt(index)
-                    } else {
-                        items[index] = updatedFolder
-                    }
-                    // Refresh will re-add any apps removed from folder to the main list
-                    refreshApps()
-                    saveAppOrder()
-                }
-            }
         }
     }
 
@@ -98,7 +73,7 @@ class MainActivity : AppCompatActivity() {
                 if (target != null && target.bindingAdapterPosition != RecyclerView.NO_POSITION) {
                     val fromPos = selected.bindingAdapterPosition
                     val toPos = target.bindingAdapterPosition
-                    
+
                     val draggedItem = items[fromPos]
                     val targetItem = items[toPos]
 
@@ -236,13 +211,13 @@ class MainActivity : AppCompatActivity() {
         val categories = packageNames.mapNotNull { getAppCategory(it) }
 
         if (categories.isEmpty()) return "New Folder"
-        
+
         // If all apps share a category, use it
         val firstCategory = categories.first()
         if (categories.all { it == firstCategory }) {
             return firstCategory
         }
-        
+
         // Otherwise, find the most frequent category
         return categories.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key ?: "New Folder"
     }
@@ -250,13 +225,13 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("NotifyDataSetChanged")
     private fun autoSortApps() {
         val apps = getInstalledLauncherApps()
-        
+
         val categoryGroups = apps.groupBy { app ->
             getAppCategory(app.activityInfo.packageName) ?: "Misc"
         }
 
         val newItems = mutableListOf<Any>()
-        
+
         categoryGroups.forEach { (category, groupApps) ->
             if (category != "Misc" && groupApps.size > 1) {
                 val packageNames = groupApps.map { it.activityInfo.packageName }.toMutableList()
@@ -295,7 +270,7 @@ class MainActivity : AppCompatActivity() {
             // Update items list while maintaining existing items (folders and ordered apps)
             val currentPackages = mutableSetOf<String>()
             val newItems = mutableListOf<Any>()
-            
+
             // First, keep existing folders and apps that are still installed
             for (item in items) {
                 if (item is Folder) {
@@ -312,18 +287,18 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
-            
+
             // Then, add any new apps that weren't in the list
             for (app in apps) {
                 if (!currentPackages.contains(app.activityInfo.packageName)) {
                     newItems.add(app)
                 }
             }
-            
+
             items.clear()
             items.addAll(newItems)
         }
-        
+
         if (appsList.adapter == null) {
             appsList.adapter = AppsAdapter(items)
         } else {
@@ -371,6 +346,51 @@ class MainActivity : AppCompatActivity() {
             }
         }
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit { putString(LAYOUT_KEY, layoutString) }
+    }
+
+    private fun showFolderDialog(folder: Folder) {
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_folder_view, null)
+        val folderTitle = dialogView.findViewById<TextView>(R.id.folder_title)
+        val folderAppsList = dialogView.findViewById<RecyclerView>(R.id.apps_list)
+
+        folderTitle.text = folder.name
+        folderAppsList.layoutManager = GridLayoutManager(this, 4)
+
+        val dialog = AlertDialog.Builder(this)
+            .setView(dialogView)
+            .create()
+
+        val mainIntent = Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER)
+        val allApps = packageManager.queryIntentActivities(mainIntent, 0)
+        val folderApps = allApps.filter { app -> folder.apps.contains(app.activityInfo.packageName) }
+
+        val adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+                val view = LayoutInflater.from(parent.context).inflate(R.layout.folder_app_item, parent, false)
+                return object: RecyclerView.ViewHolder(view) {}
+            }
+
+            override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+                val app = folderApps[position]
+                val appName = holder.itemView.findViewById<TextView>(R.id.app_name)
+                val appIcon = holder.itemView.findViewById<ImageView>(R.id.app_icon)
+
+                appName.text = app.loadLabel(packageManager)
+                appIcon.setImageDrawable(app.loadIcon(packageManager))
+
+                holder.itemView.setOnClickListener {
+                    val launchIntent = packageManager.getLaunchIntentForPackage(app.activityInfo.packageName)
+                    startActivity(launchIntent)
+                    dialog.dismiss()
+                }
+            }
+
+            override fun getItemCount(): Int = folderApps.size
+        }
+
+        folderAppsList.adapter = adapter
+
+        dialog.show()
     }
 
     inner class AppsAdapter(private val items: MutableList<Any>) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
@@ -485,9 +505,7 @@ class MainActivity : AppCompatActivity() {
                 if (pos != RecyclerView.NO_POSITION) {
                     val item = items[pos]
                     if (item is Folder) {
-                        val intent = Intent(this@MainActivity, FolderActivity::class.java)
-                        intent.putExtra("folder", item)
-                        folderResultLauncher.launch(intent)
+                        showFolderDialog(item)
                     }
                 }
             }
@@ -556,7 +574,7 @@ class MainActivity : AppCompatActivity() {
                 is FolderViewHolder -> {
                     val folder = items[position] as Folder
                     holder.folderName.text = folder.name
-                    
+
                     // Fetch icons for the apps in the folder
                     val folderIcons = folder.apps.take(4).mapNotNull { packageName ->
                         try {
