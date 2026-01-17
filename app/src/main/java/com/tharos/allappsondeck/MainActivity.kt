@@ -348,6 +348,7 @@ class MainActivity : AppCompatActivity() {
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit { putString(LAYOUT_KEY, layoutString) }
     }
 
+    @SuppressLint("NotifyDataSetChanged")
     private fun showFolderDialog(folder: Folder) {
         val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_folder_view, null)
         val folderTitle = dialogView.findViewById<TextView>(R.id.folder_title)
@@ -382,6 +383,39 @@ class MainActivity : AppCompatActivity() {
                     val launchIntent = packageManager.getLaunchIntentForPackage(app.activityInfo.packageName)
                     startActivity(launchIntent)
                     dialog.dismiss()
+                }
+
+                holder.itemView.setOnLongClickListener {
+                    val popup = PopupMenu(this@MainActivity, it)
+                    popup.menu.add("Remove from Folder")
+                    popup.menu.add("More Info")
+                    popup.setOnMenuItemClickListener { menuItem ->
+                        when (menuItem.title) {
+                            "Remove from Folder" -> {
+                                folder.apps.remove(app.activityInfo.packageName)
+                                saveAppOrder()
+                                refreshApps()
+
+                                if (folder.apps.isEmpty()) {
+                                    dialog.dismiss()
+                                } else {
+                                    allApps.filter { app -> folder.apps.contains(app.activityInfo.packageName) }
+                                    notifyDataSetChanged()
+                                }
+                                true
+                            }
+                            "More Info" -> {
+                                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                                intent.data = "package:${app.activityInfo.packageName}".toUri()
+                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                startActivity(intent)
+                                true
+                            }
+                            else -> false
+                        }
+                    }
+                    popup.show()
+                    true
                 }
             }
 
