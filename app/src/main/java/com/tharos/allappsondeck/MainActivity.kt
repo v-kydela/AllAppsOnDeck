@@ -375,7 +375,7 @@ class MainActivity : AppCompatActivity() {
 
         val mainIntent = Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER)
         val allApps = packageManager.queryIntentActivities(mainIntent, 0)
-        val folderApps = allApps.filter { app -> folder.apps.contains(app.activityInfo.packageName) }
+        val folderApps = allApps.filter { app -> folder.apps.contains(app.activityInfo.packageName) }.toMutableList()
 
         val adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
             override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
@@ -404,15 +404,19 @@ class MainActivity : AppCompatActivity() {
                     popup.setOnMenuItemClickListener { menuItem ->
                         when (menuItem.title) {
                             "Remove from Folder" -> {
-                                folder.apps.remove(app.activityInfo.packageName)
+                                val currentPosition = holder.bindingAdapterPosition
+                                if (currentPosition != RecyclerView.NO_POSITION) {
+                                    folder.apps.remove(app.activityInfo.packageName)
+                                    folderApps.removeAt(currentPosition)
+                                    notifyItemRemoved(currentPosition)
+                                    notifyItemRangeChanged(currentPosition, folderApps.size)
+                                }
+
                                 saveAppOrder()
                                 refreshApps()
 
                                 if (folder.apps.isEmpty()) {
                                     dialog.dismiss()
-                                } else {
-                                    allApps.filter { app -> folder.apps.contains(app.activityInfo.packageName) }
-                                    notifyDataSetChanged()
                                 }
                                 true
                             }
