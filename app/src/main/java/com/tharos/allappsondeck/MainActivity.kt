@@ -177,7 +177,8 @@ class MainActivity : AppCompatActivity() {
 
                                 appsList.adapter?.notifyItemRemoved(fromPosition)
                                 // Optionally notify that folder was updated (though icon might not change)
-                                appsList.adapter?.notifyItemChanged(toPosition)
+                                val finalFolderPosition = if (fromPosition < toPosition) toPosition - 1 else toPosition
+                                appsList.adapter?.notifyItemChanged(finalFolderPosition)
                             }
                         }
                     }
