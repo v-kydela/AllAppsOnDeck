@@ -573,6 +573,7 @@ class MainActivity : AppCompatActivity() {
                 popupMenu = PopupMenu(v.context, v)
                 popupMenu?.setOnDismissListener { popupMenu = null }
                 popupMenu?.menu?.add("Rename")
+                popupMenu?.menu?.add("Auto Sort")
                 popupMenu?.setOnMenuItemClickListener { menuItem ->
                     when (menuItem.title) {
                         "Rename" -> {
@@ -588,6 +589,10 @@ class MainActivity : AppCompatActivity() {
                                 }
                                 .setNegativeButton("Cancel", null)
                                 .show()
+                            true
+                        }
+                        "Auto Sort" -> {
+                            autoSortApps()
                             true
                         }
                         else -> false
