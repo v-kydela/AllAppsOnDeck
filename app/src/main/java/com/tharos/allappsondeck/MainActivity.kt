@@ -14,7 +14,6 @@ import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.EditText
 import android.widget.ImageView
 import android.widget.PopupMenu
 import android.widget.TextView
@@ -35,7 +34,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var appsList: RecyclerView
     private lateinit var itemTouchHelper: ItemTouchHelper
-    private var popupMenu: PopupMenu? = null
+    internal var popupMenu: PopupMenu? = null
     private var isActuallyMoving = false
     private lateinit var items: MutableList<Any>
 
@@ -51,8 +50,6 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val PREFS_NAME = "AppOrder"
         private const val LAYOUT_KEY = "app_layout_v4" // Upgraded key for unified state
-        private const val TYPE_APP = 0
-        private const val TYPE_FOLDER = 1
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -220,7 +217,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun getFolderNameForApps(packageNames: List<String>): String {
+    internal fun getFolderNameForApps(packageNames: List<String>): String {
         val categories = packageNames.mapNotNull { getAppCategory(it) }
 
         if (categories.isEmpty()) return "New Folder"
@@ -236,7 +233,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     @SuppressLint("NotifyDataSetChanged")
-    private fun autoSortApps() {
+    internal fun autoSortApps() {
         val apps = getInstalledLauncherApps()
 
         val categoryGroups = apps.groupBy { app ->
@@ -313,7 +310,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (appsList.adapter == null) {
-            appsList.adapter = AppsAdapter(items)
+            appsList.adapter = AppsAdapter(this, items, itemTouchHelper)
         } else {
             appsList.adapter?.notifyDataSetChanged()
         }
@@ -350,7 +347,7 @@ class MainActivity : AppCompatActivity() {
         allApps.forEach { if (!seenPackages.contains(it.activityInfo.packageName)) items.add(it) }
     }
 
-    private fun saveAppOrder() {
+    internal fun saveAppOrder() {
         val layoutString = items.joinToString("|") { item ->
             when (item) {
                 is ResolveInfo -> "A:${item.activityInfo.packageName}"
@@ -362,7 +359,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     @SuppressLint("NotifyDataSetChanged")
-    private fun showFolderDialog(folder: Folder) {
+    internal fun showFolderDialog(folder: Folder) {
         val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_folder_view, null)
         val folderTitle = dialogView.findViewById<TextView>(R.id.folder_title)
         val folderAppsList = dialogView.findViewById<RecyclerView>(R.id.apps_list)
@@ -378,19 +375,22 @@ class MainActivity : AppCompatActivity() {
         val allApps = packageManager.queryIntentActivities(mainIntent, 0)
         val folderApps = allApps.filter { app -> folder.apps.contains(app.activityInfo.packageName) }.toMutableList()
 
-        val adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
-            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+        class FolderAppViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+            val appName: TextView = itemView.findViewById(R.id.app_name)
+            val appIcon: ImageView = itemView.findViewById(R.id.app_icon)
+        }
+
+        val adapter = object : RecyclerView.Adapter<FolderAppViewHolder>() {
+            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): FolderAppViewHolder {
                 val view = LayoutInflater.from(parent.context).inflate(R.layout.folder_app_item, parent, false)
-                return object: RecyclerView.ViewHolder(view) {}
+                return FolderAppViewHolder(view)
             }
 
-            override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+            override fun onBindViewHolder(holder: FolderAppViewHolder, position: Int) {
                 val app = folderApps[position]
-                val appName = holder.itemView.findViewById<TextView>(R.id.app_name)
-                val appIcon = holder.itemView.findViewById<ImageView>(R.id.app_icon)
 
-                appName.text = app.loadLabel(packageManager)
-                appIcon.setImageDrawable(app.loadIcon(packageManager))
+                holder.appName.text = app.loadLabel(packageManager)
+                holder.appIcon.setImageDrawable(app.loadIcon(packageManager))
 
                 holder.itemView.setOnClickListener {
                     val launchIntent = packageManager.getLaunchIntentForPackage(app.activityInfo.packageName)
@@ -442,210 +442,5 @@ class MainActivity : AppCompatActivity() {
         folderAppsList.adapter = adapter
 
         dialog.show()
-    }
-
-    inner class AppsAdapter(private val items: MutableList<Any>) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
-
-        override fun getItemViewType(position: Int): Int {
-            return when (items[position]) {
-                is ResolveInfo -> TYPE_APP
-                is Folder -> TYPE_FOLDER
-                else -> throw IllegalArgumentException("Invalid type of item at position $position")
-            }
-        }
-
-        inner class AppViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView), View.OnClickListener, View.OnLongClickListener {
-            val appName: TextView = itemView.findViewById(R.id.app_name)
-
-            init {
-                (itemView as TextView).compoundDrawablePadding = 16
-                itemView.setOnClickListener(this)
-                itemView.setOnLongClickListener(this)
-            }
-
-            override fun onClick(v: View?) {
-                if (popupMenu != null) {
-                    popupMenu?.dismiss()
-                    return
-                }
-
-                val pos = bindingAdapterPosition
-                if (pos != RecyclerView.NO_POSITION) {
-                    val item = items[pos]
-                    if (item is ResolveInfo) {
-                        val packageName = item.activityInfo.packageName
-                        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
-                        if (launchIntent != null) {
-                            startActivity(launchIntent)
-                        } else {
-                            Toast.makeText(this@MainActivity, "App not found", Toast.LENGTH_SHORT).show()
-                            refreshApps()
-                        }
-                    }
-                }
-            }
-
-            override fun onLongClick(v: View): Boolean {
-                popupMenu?.dismiss()
-                val pos = bindingAdapterPosition
-                if (pos == RecyclerView.NO_POSITION) return false
-
-                val item = items[pos] as? ResolveInfo ?: return false
-
-                itemTouchHelper.startDrag(this)
-
-                popupMenu = PopupMenu(v.context, v)
-                popupMenu?.setOnDismissListener { popupMenu = null }
-                popupMenu?.menu?.add("Auto Sort")
-                popupMenu?.menu?.add("Create Folder")
-                popupMenu?.menu?.add("More Info")
-                popupMenu?.setOnMenuItemClickListener { menuItem ->
-                    when (menuItem.title) {
-                        "Auto Sort" -> {
-                            autoSortApps()
-                            true
-                        }
-                        "Create Folder" -> {
-                            val suggestedName = getFolderNameForApps(listOf(item.activityInfo.packageName))
-                            val editText = EditText(this@MainActivity)
-                            editText.setText(suggestedName)
-                            AlertDialog.Builder(this@MainActivity)
-                                .setTitle("New Folder")
-                                .setView(editText)
-                                .setPositiveButton("Create") { _, _ ->
-                                    val name = editText.text.toString().ifEmpty { suggestedName }
-                                    items[pos] = Folder(name, mutableListOf(item.activityInfo.packageName))
-                                    notifyItemChanged(pos)
-                                    saveAppOrder()
-                                }
-                                .setNegativeButton("Cancel", null)
-                                .show()
-                            true
-                        }
-                        "More Info" -> {
-                            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                            intent.data = "package:${item.activityInfo.packageName}".toUri()
-                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            startActivity(intent)
-                            true
-                        }
-                        else -> false
-                    }
-                }
-                popupMenu?.show()
-                return true
-            }
-        }
-
-        inner class FolderViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView), View.OnClickListener, View.OnLongClickListener {
-            val folderName: TextView = itemView.findViewById(R.id.folder_name)
-            val folderIcon: FolderIconView = itemView.findViewById(R.id.folder_icon)
-
-            init {
-                itemView.setOnClickListener(this)
-                itemView.setOnLongClickListener(this)
-            }
-
-            override fun onClick(v: View?) {
-                if (popupMenu != null) {
-                    popupMenu?.dismiss()
-                    return
-                }
-
-                val pos = bindingAdapterPosition
-                if (pos != RecyclerView.NO_POSITION) {
-                    val item = items[pos]
-                    if (item is Folder) {
-                        showFolderDialog(item)
-                    }
-                }
-            }
-
-            override fun onLongClick(v: View): Boolean {
-                popupMenu?.dismiss()
-                val pos = bindingAdapterPosition
-                if (pos == RecyclerView.NO_POSITION) return false
-
-                val item = items[pos] as? Folder ?: return false
-
-                itemTouchHelper.startDrag(this)
-
-                popupMenu = PopupMenu(v.context, v)
-                popupMenu?.setOnDismissListener { popupMenu = null }
-                popupMenu?.menu?.add("Rename")
-                popupMenu?.menu?.add("Auto Sort")
-                popupMenu?.setOnMenuItemClickListener { menuItem ->
-                    when (menuItem.title) {
-                        "Rename" -> {
-                            val editText = EditText(this@MainActivity)
-                            editText.setText(item.name)
-                            AlertDialog.Builder(this@MainActivity)
-                                .setTitle("Rename Folder")
-                                .setView(editText)
-                                .setPositiveButton("Save") { _, _ ->
-                                    item.name = editText.text.toString()
-                                    notifyItemChanged(pos)
-                                    saveAppOrder()
-                                }
-                                .setNegativeButton("Cancel", null)
-                                .show()
-                            true
-                        }
-                        "Auto Sort" -> {
-                            autoSortApps()
-                            true
-                        }
-                        else -> false
-                    }
-                }
-                popupMenu?.show()
-                return true
-            }
-        }
-
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
-            return when (viewType) {
-                TYPE_APP -> {
-                    val view = LayoutInflater.from(parent.context).inflate(R.layout.app_item, parent, false)
-                    AppViewHolder(view)
-                }
-                TYPE_FOLDER -> {
-                    val view = LayoutInflater.from(parent.context).inflate(R.layout.folder_item, parent, false)
-                    FolderViewHolder(view)
-                }
-                else -> throw IllegalArgumentException("Invalid view type: $viewType")
-            }
-        }
-
-        override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
-            when (holder) {
-                is AppViewHolder -> {
-                    val app = items[position] as ResolveInfo
-                    holder.appName.text = app.loadLabel(packageManager)
-                    val icon = app.loadIcon(packageManager)
-                    val iconSize = (48 * holder.itemView.context.resources.displayMetrics.density).toInt()
-                    icon.setBounds(0, 0, iconSize, iconSize)
-                    holder.appName.setCompoundDrawables(null, icon, null, null)
-                }
-                is FolderViewHolder -> {
-                    val folder = items[position] as Folder
-                    holder.folderName.text = folder.name
-
-                    // Fetch icons for the apps in the folder
-                    val folderIcons = folder.apps.take(4).mapNotNull { packageName ->
-                        try {
-                            packageManager.getApplicationIcon(packageName)
-                        } catch (_: Exception) {
-                            null
-                        }
-                    }
-                    holder.folderIcon.setIcons(folderIcons)
-                }
-            }
-        }
-
-        override fun getItemCount(): Int {
-            return items.size
-        }
     }
 }
