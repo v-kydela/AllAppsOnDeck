@@ -67,8 +67,6 @@ class MainActivity : AppCompatActivity() {
 
         appsList.layoutManager = GridLayoutManager(this, 4, GridLayoutManager.VERTICAL, true)
 
-        refreshApps()
-
         val callback = object : ItemTouchHelper.Callback() {
             // This method is called as an item is dragged over others
             override fun chooseDropTarget(
@@ -191,6 +189,8 @@ class MainActivity : AppCompatActivity() {
 
         itemTouchHelper = ItemTouchHelper(callback)
         itemTouchHelper.attachToRecyclerView(appsList)
+
+        refreshApps()
 
         val intentFilter = IntentFilter("com.tharos.allappsondeck.REFRESH_APPS")
         ContextCompat.registerReceiver(this, refreshReceiver, intentFilter, ContextCompat.RECEIVER_NOT_EXPORTED)
