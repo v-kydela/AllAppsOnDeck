@@ -299,11 +299,27 @@ class MainActivity : AppCompatActivity() {
             }
 
             // Then, add any new apps that weren't in the list
-            for (app in apps) {
-                if (!currentPackages.contains(app.activityInfo.packageName)) {
-                    newItems.add(app)
+            val newApps = apps.filter { !currentPackages.contains(it.activityInfo.packageName) }
+            if (newApps.isNotEmpty()) {
+                for (app in newApps) {
+                    val category = getAppCategory(app.activityInfo.packageName)
+                    var addedToFolder = false
+                    if (category != null) {
+                        val targetFolder =
+                            newItems.find { it is Folder && it.name.equals(category, ignoreCase = true) } as? Folder
+                        if (targetFolder != null) {
+                            targetFolder.apps.add(app.activityInfo.packageName)
+                            addedToFolder = true
+                        }
+                    }
+
+                    if (!addedToFolder) {
+                        newItems.add(app)
+                    }
                 }
+                saveAppOrder()
             }
+
 
             items.clear()
             items.addAll(newItems)
