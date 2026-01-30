@@ -423,17 +423,32 @@ class MainActivity : AppCompatActivity() {
                             "Remove from Folder" -> {
                                 val currentPosition = holder.bindingAdapterPosition
                                 if (currentPosition != RecyclerView.NO_POSITION) {
-                                    folder.apps.remove(app.activityInfo.packageName)
-                                    folderApps.removeAt(currentPosition)
+                                    val removedAppInfo = folderApps.removeAt(currentPosition)
+                                    folder.apps.remove(removedAppInfo.activityInfo.packageName)
                                     notifyItemRemoved(currentPosition)
                                     notifyItemRangeChanged(currentPosition, folderApps.size)
+
+                                    // Also add it back to the main list
+                                    items.add(removedAppInfo)
+                                    appsList.adapter?.notifyItemInserted(items.size - 1)
                                 }
 
                                 saveAppOrder()
-                                refreshApps()
 
                                 if (folder.apps.isEmpty()) {
+                                    // Remove the folder itself if it's now empty
+                                    val folderIndex = items.indexOf(folder)
+                                    if (folderIndex != -1) {
+                                        items.removeAt(folderIndex)
+                                        appsList.adapter?.notifyItemRemoved(folderIndex)
+                                    }
                                     dialog.dismiss()
+                                } else {
+                                    // Refresh the folder icon in the main grid
+                                    val folderIndex = items.indexOf(folder)
+                                    if (folderIndex != -1) {
+                                        appsList.adapter?.notifyItemChanged(folderIndex)
+                                    }
                                 }
                                 true
                             }
