@@ -18,6 +18,7 @@ import android.widget.ImageView
 import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
@@ -45,6 +46,11 @@ class MainActivity : AppCompatActivity() {
         override fun onReceive(context: Context?, intent: Intent?) {
             refreshApps()
         }
+    }
+
+    private val settingsResultLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        // App settings screen closed, refresh the list
+        refreshApps()
     }
 
     companion object {
@@ -194,6 +200,12 @@ class MainActivity : AppCompatActivity() {
 
         val intentFilter = IntentFilter("com.tharos.allappsondeck.REFRESH_APPS")
         ContextCompat.registerReceiver(this, refreshReceiver, intentFilter, ContextCompat.RECEIVER_NOT_EXPORTED)
+    }
+
+    fun showAppDetails(packageName: String) {
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+        intent.data = "package:$packageName".toUri()
+        settingsResultLauncher.launch(intent)
     }
 
     private fun getAppCategory(packageName: String): String? {
@@ -455,8 +467,8 @@ class MainActivity : AppCompatActivity() {
                             "More Info" -> {
                                 val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
                                 intent.data = "package:${app.activityInfo.packageName}".toUri()
-                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                startActivity(intent)
+                                settingsResultLauncher.launch(intent)
+                                dialog.dismiss()
                                 true
                             }
                             else -> false
