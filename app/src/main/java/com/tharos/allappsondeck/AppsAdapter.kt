@@ -146,6 +146,7 @@ class AppsAdapter(
             mainActivity.popupMenu = PopupMenu(v.context, v)
             mainActivity.popupMenu?.setOnDismissListener { mainActivity.popupMenu = null }
             mainActivity.popupMenu?.menu?.add("Rename")
+            mainActivity.popupMenu?.menu?.add("Empty Folder")
             mainActivity.popupMenu?.menu?.add("Auto Sort")
             mainActivity.popupMenu?.setOnMenuItemClickListener { menuItem ->
                 when (menuItem.title) {
@@ -162,6 +163,10 @@ class AppsAdapter(
                             }
                             .setNegativeButton("Cancel", null)
                             .show()
+                        true
+                    }
+                    "Empty Folder" -> {
+                        mainActivity.emptyFolder(item)
                         true
                     }
                     "Auto Sort" -> {

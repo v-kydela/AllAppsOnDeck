@@ -486,4 +486,23 @@ class MainActivity : AppCompatActivity() {
 
         dialog.show()
     }
+
+    @SuppressLint("NotifyDataSetChanged")
+    internal fun emptyFolder(folder: Folder) {
+        val folderIndex = items.indexOf(folder)
+        if (folderIndex == -1) return
+
+        val mainIntent = Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER)
+        val allApps = packageManager.queryIntentActivities(mainIntent, 0)
+        val appMap = allApps.associateBy { it.activityInfo.packageName }
+
+        val appsFromFolder = folder.apps.mapNotNull { appMap[it] }
+
+        items.removeAt(folderIndex)
+        items.addAll(appsFromFolder)
+
+        appsList.adapter?.notifyDataSetChanged()
+
+        saveAppOrder()
+    }
 }
