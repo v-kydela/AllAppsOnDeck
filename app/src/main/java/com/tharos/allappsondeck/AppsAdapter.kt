@@ -74,6 +74,7 @@ class AppsAdapter(
             mainActivity.popupMenu?.setOnDismissListener { mainActivity.popupMenu = null }
             mainActivity.popupMenu?.menu?.add("Auto Sort")
             mainActivity.popupMenu?.menu?.add("Create Folder")
+            mainActivity.popupMenu?.menu?.add("Empty All Folders")
             mainActivity.popupMenu?.menu?.add("More Info")
             mainActivity.popupMenu?.setOnMenuItemClickListener { menuItem ->
                 when (menuItem.title) {
@@ -96,6 +97,10 @@ class AppsAdapter(
                             }
                             .setNegativeButton("Cancel", null)
                             .show()
+                        true
+                    }
+                    "Empty All Folders" -> {
+                        mainActivity.emptyAllFolders()
                         true
                     }
                     "More Info" -> {
@@ -148,6 +153,7 @@ class AppsAdapter(
             mainActivity.popupMenu?.menu?.add("Rename")
             mainActivity.popupMenu?.menu?.add("Empty Folder")
             mainActivity.popupMenu?.menu?.add("Auto Sort")
+            mainActivity.popupMenu?.menu?.add("Empty All Folders")
             mainActivity.popupMenu?.setOnMenuItemClickListener { menuItem ->
                 when (menuItem.title) {
                     "Rename" -> {
@@ -171,6 +177,10 @@ class AppsAdapter(
                     }
                     "Auto Sort" -> {
                         mainActivity.autoSortApps()
+                        true
+                    }
+                    "Empty All Folders" -> {
+                        mainActivity.emptyAllFolders()
                         true
                     }
                     else -> false

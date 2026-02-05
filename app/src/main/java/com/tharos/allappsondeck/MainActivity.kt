@@ -505,4 +505,30 @@ class MainActivity : AppCompatActivity() {
 
         saveAppOrder()
     }
+
+    @SuppressLint("NotifyDataSetChanged")
+    internal fun emptyAllFolders() {
+        val folders = items.filterIsInstance<Folder>()
+        if (folders.isEmpty()) {
+            Toast.makeText(this, "No folders found to empty.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val mainIntent = Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER)
+        val allApps = packageManager.queryIntentActivities(mainIntent, 0)
+        val appMap = allApps.associateBy { it.activityInfo.packageName }
+
+        val appsFromFolders = mutableListOf<ResolveInfo>()
+        folders.forEach { folder ->
+            appsFromFolders.addAll(folder.apps.mapNotNull { appMap[it] })
+        }
+
+        items.removeAll(folders)
+        items.addAll(appsFromFolders)
+
+        appsList.adapter?.notifyDataSetChanged()
+        saveAppOrder()
+
+        Toast.makeText(this, "All folders have been emptied.", Toast.LENGTH_SHORT).show()
+    }
 }
