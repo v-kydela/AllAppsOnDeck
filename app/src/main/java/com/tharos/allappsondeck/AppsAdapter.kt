@@ -20,6 +20,12 @@ class AppsAdapter(
     companion object {
         private const val TYPE_APP = 0
         private const val TYPE_FOLDER = 1
+        private const val MENU_AUTO_SORT = "Auto Sort"
+        private const val MENU_CREATE_FOLDER = "Create Folder"
+        private const val MENU_EMPTY_ALL_FOLDERS = "Empty All Folders"
+        private const val MENU_MORE_INFO = "More Info"
+        private const val MENU_RENAME = "Rename"
+        private const val MENU_EMPTY_FOLDER = "Empty Folder"
     }
 
     override fun getItemViewType(position: Int): Int {
@@ -72,17 +78,17 @@ class AppsAdapter(
 
             mainActivity.popupMenu = PopupMenu(v.context, v)
             mainActivity.popupMenu?.setOnDismissListener { mainActivity.popupMenu = null }
-            mainActivity.popupMenu?.menu?.add("Auto Sort")
-            mainActivity.popupMenu?.menu?.add("Create Folder")
-            mainActivity.popupMenu?.menu?.add("Empty All Folders")
-            mainActivity.popupMenu?.menu?.add("More Info")
+            mainActivity.popupMenu?.menu?.add(MENU_AUTO_SORT)
+            mainActivity.popupMenu?.menu?.add(MENU_CREATE_FOLDER)
+            mainActivity.popupMenu?.menu?.add(MENU_EMPTY_ALL_FOLDERS)
+            mainActivity.popupMenu?.menu?.add(MENU_MORE_INFO)
             mainActivity.popupMenu?.setOnMenuItemClickListener { menuItem ->
                 when (menuItem.title) {
-                    "Auto Sort" -> {
+                    MENU_AUTO_SORT -> {
                         mainActivity.autoSortApps()
                         true
                     }
-                    "Create Folder" -> {
+                    MENU_CREATE_FOLDER -> {
                         val suggestedName = mainActivity.getFolderNameForApps(listOf(item.activityInfo.packageName))
                         val editText = EditText(mainActivity)
                         editText.setText(suggestedName)
@@ -99,11 +105,11 @@ class AppsAdapter(
                             .show()
                         true
                     }
-                    "Empty All Folders" -> {
+                    MENU_EMPTY_ALL_FOLDERS -> {
                         mainActivity.emptyAllFolders()
                         true
                     }
-                    "More Info" -> {
+                    MENU_MORE_INFO -> {
                         mainActivity.showAppDetails(item.activityInfo.packageName)
                         true
                     }
@@ -150,13 +156,13 @@ class AppsAdapter(
 
             mainActivity.popupMenu = PopupMenu(v.context, v)
             mainActivity.popupMenu?.setOnDismissListener { mainActivity.popupMenu = null }
-            mainActivity.popupMenu?.menu?.add("Rename")
-            mainActivity.popupMenu?.menu?.add("Empty Folder")
-            mainActivity.popupMenu?.menu?.add("Auto Sort")
-            mainActivity.popupMenu?.menu?.add("Empty All Folders")
+            mainActivity.popupMenu?.menu?.add(MENU_RENAME)
+            mainActivity.popupMenu?.menu?.add(MENU_EMPTY_FOLDER)
+            mainActivity.popupMenu?.menu?.add(MENU_AUTO_SORT)
+            mainActivity.popupMenu?.menu?.add(MENU_EMPTY_ALL_FOLDERS)
             mainActivity.popupMenu?.setOnMenuItemClickListener { menuItem ->
                 when (menuItem.title) {
-                    "Rename" -> {
+                    MENU_RENAME -> {
                         val editText = EditText(mainActivity)
                         editText.setText(item.name)
                         AlertDialog.Builder(mainActivity)
@@ -171,15 +177,15 @@ class AppsAdapter(
                             .show()
                         true
                     }
-                    "Empty Folder" -> {
+                    MENU_EMPTY_FOLDER -> {
                         mainActivity.emptyFolder(item)
                         true
                     }
-                    "Auto Sort" -> {
+                    MENU_AUTO_SORT -> {
                         mainActivity.autoSortApps()
                         true
                     }
-                    "Empty All Folders" -> {
+                    MENU_EMPTY_ALL_FOLDERS -> {
                         mainActivity.emptyAllFolders()
                         true
                     }
