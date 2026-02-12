@@ -28,19 +28,13 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.recyclerview.widget.GridLayoutManager
-import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var appsList: RecyclerView
-    private lateinit var itemTouchHelper: ItemTouchHelper
     internal var popupMenu: PopupMenu? = null
-    private var isActuallyMoving = false
     private lateinit var items: MutableList<Any>
-
-    // Variable to track which item we are dragging over for folder creation/addition
-    private var dropTargetViewHolder: RecyclerView.ViewHolder? = null
 
     private val refreshReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -72,129 +66,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         appsList.layoutManager = GridLayoutManager(this, 4, GridLayoutManager.VERTICAL, true)
-
-        val callback = object : ItemTouchHelper.Callback() {
-            // This method is called as an item is dragged over others
-            override fun chooseDropTarget(
-                selected: RecyclerView.ViewHolder,
-                targets: MutableList<RecyclerView.ViewHolder>,
-                curX: Int,
-                curY: Int
-            ): RecyclerView.ViewHolder? {
-                // Find the first target that isn't the item being dragged
-                val target = super.chooseDropTarget(selected, targets, curX, curY)
-                if (target != null && target.bindingAdapterPosition != RecyclerView.NO_POSITION) {
-                    val fromPos = selected.bindingAdapterPosition
-                    val toPos = target.bindingAdapterPosition
-
-                    val draggedItem = items[fromPos]
-                    val targetItem = items[toPos]
-
-                    // Allow dropping an app onto another app (to create a folder) or onto an existing folder
-                    dropTargetViewHolder = if (draggedItem is ResolveInfo && (targetItem is ResolveInfo || targetItem is Folder)) {
-                        target
-                    } else {
-                        null
-                    }
-                } else {
-                    dropTargetViewHolder = null
-                }
-                return target
-            }
-
-            override fun getMovementFlags(
-                recyclerView: RecyclerView,
-                viewHolder: RecyclerView.ViewHolder
-            ): Int {
-                val dragFlags = ItemTouchHelper.UP or ItemTouchHelper.DOWN or ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT
-                val swipeFlags = 0
-                return makeMovementFlags(dragFlags, swipeFlags)
-            }
-
-            override fun onMove(
-                recyclerView: RecyclerView,
-                viewHolder: RecyclerView.ViewHolder,
-                target: RecyclerView.ViewHolder
-            ): Boolean {
-                if (!isActuallyMoving) {
-                    isActuallyMoving = true
-                    popupMenu?.dismiss()
-                }
-                val fromPosition = viewHolder.bindingAdapterPosition
-                val toPosition = target.bindingAdapterPosition
-                val movedItem = items.removeAt(fromPosition)
-                items.add(toPosition, movedItem)
-                appsList.adapter?.notifyItemMoved(fromPosition, toPosition)
-                return true
-            }
-
-            override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
-                // Not used
-            }
-
-            override fun isLongPressDragEnabled(): Boolean {
-                return false
-            }
-
-            override fun onSelectedChanged(viewHolder: RecyclerView.ViewHolder?, actionState: Int) {
-                super.onSelectedChanged(viewHolder, actionState)
-                if (actionState == ItemTouchHelper.ACTION_STATE_DRAG) {
-                    popupMenu?.dismiss()
-                    isActuallyMoving = false
-                }
-            }
-
-            override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
-                super.clearView(recyclerView, viewHolder)
-
-                // Check if we dropped an item onto another valid target
-                if (dropTargetViewHolder != null) {
-                    val fromPosition = viewHolder.bindingAdapterPosition
-                    val toPosition = dropTargetViewHolder!!.bindingAdapterPosition
-
-                    if (fromPosition != RecyclerView.NO_POSITION && toPosition != RecyclerView.NO_POSITION) {
-                        val draggedItem = items[fromPosition]
-                        val targetItem = items[toPosition]
-
-                        if (draggedItem is ResolveInfo) {
-                            if (targetItem is ResolveInfo) {
-                                // Create a new folder
-                                val folderApps = mutableListOf(targetItem.activityInfo.packageName, draggedItem.activityInfo.packageName)
-                                val suggestedName = getFolderNameForApps(folderApps)
-                                val newFolder = Folder(suggestedName, folderApps)
-
-                                // Replace the target item with the new folder
-                                items[toPosition] = newFolder
-                                // Remove the dragged item from its original position
-                                items.removeAt(fromPosition)
-
-                                appsList.adapter?.notifyItemChanged(toPosition)
-                                appsList.adapter?.notifyItemRemoved(fromPosition)
-                            } else if (targetItem is Folder) {
-                                // Add app to existing folder
-                                targetItem.apps.add(draggedItem.activityInfo.packageName)
-                                // Remove the dragged app from the main list
-                                items.removeAt(fromPosition)
-
-                                appsList.adapter?.notifyItemRemoved(fromPosition)
-                                // Optionally notify that folder was updated (though icon might not change)
-                                val finalFolderPosition = if (fromPosition < toPosition) toPosition - 1 else toPosition
-                                appsList.adapter?.notifyItemChanged(finalFolderPosition)
-                            }
-                        }
-                    }
-                }
-
-                // Reset state
-                dropTargetViewHolder = null
-                if (isActuallyMoving) {
-                    saveAppOrder()
-                }
-            }
-        }
-
-        itemTouchHelper = ItemTouchHelper(callback)
-        itemTouchHelper.attachToRecyclerView(appsList)
 
         refreshApps()
 
@@ -338,7 +209,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (appsList.adapter == null) {
-            appsList.adapter = AppsAdapter(this, items, itemTouchHelper)
+            appsList.adapter = AppsAdapter(this, items)
         } else {
             appsList.adapter?.notifyDataSetChanged()
         }

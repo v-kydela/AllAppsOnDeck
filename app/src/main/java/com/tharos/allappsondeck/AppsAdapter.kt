@@ -1,7 +1,10 @@
 package com.tharos.allappsondeck
 
 import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipDescription
 import android.content.pm.ResolveInfo
+import android.view.DragEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -13,8 +16,7 @@ import androidx.recyclerview.widget.RecyclerView
 
 class AppsAdapter(
     private val mainActivity: MainActivity,
-    private val items: MutableList<Any>,
-    private val itemTouchHelper: androidx.recyclerview.widget.ItemTouchHelper
+    private val items: MutableList<Any>
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     companion object {
@@ -36,13 +38,14 @@ class AppsAdapter(
         }
     }
 
-    inner class AppViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView), View.OnClickListener, View.OnLongClickListener {
+    inner class AppViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView), View.OnClickListener, View.OnLongClickListener, View.OnDragListener {
         val appName: TextView = itemView.findViewById(R.id.app_name)
 
         init {
             (itemView as TextView).compoundDrawablePadding = 16
             itemView.setOnClickListener(this)
             itemView.setOnLongClickListener(this)
+            itemView.setOnDragListener(this)
         }
 
         override fun onClick(v: View?) {
@@ -68,66 +71,129 @@ class AppsAdapter(
         }
 
         override fun onLongClick(v: View): Boolean {
-            mainActivity.popupMenu?.dismiss()
             val pos = bindingAdapterPosition
             if (pos == RecyclerView.NO_POSITION) return false
 
-            val item = items[pos] as? ResolveInfo ?: return false
+            val item = items[pos]
 
-            itemTouchHelper.startDrag(this)
+            val clipDataItem = ClipData.Item(pos.toString())
+            val clipData = ClipData("drag-app", arrayOf(ClipDescription.MIMETYPE_TEXT_PLAIN), clipDataItem)
 
+            val dragShadowBuilder = View.DragShadowBuilder(v)
+            v.startDragAndDrop(clipData, dragShadowBuilder, v, 0)
+
+            mainActivity.popupMenu?.dismiss()
             mainActivity.popupMenu = PopupMenu(v.context, v)
             mainActivity.popupMenu?.setOnDismissListener { mainActivity.popupMenu = null }
-            mainActivity.popupMenu?.menu?.add(MENU_AUTO_SORT)
-            mainActivity.popupMenu?.menu?.add(MENU_CREATE_FOLDER)
-            mainActivity.popupMenu?.menu?.add(MENU_EMPTY_ALL_FOLDERS)
-            mainActivity.popupMenu?.menu?.add(MENU_MORE_INFO)
-            mainActivity.popupMenu?.setOnMenuItemClickListener { menuItem ->
-                when (menuItem.title) {
-                    MENU_AUTO_SORT -> {
-                        mainActivity.autoSortApps()
-                        true
+            if (item is ResolveInfo) {
+                mainActivity.popupMenu?.menu?.add(MENU_AUTO_SORT)
+                mainActivity.popupMenu?.menu?.add(MENU_CREATE_FOLDER)
+                mainActivity.popupMenu?.menu?.add(MENU_EMPTY_ALL_FOLDERS)
+                mainActivity.popupMenu?.menu?.add(MENU_MORE_INFO)
+                mainActivity.popupMenu?.setOnMenuItemClickListener { menuItem ->
+                    when (menuItem.title) {
+                        MENU_AUTO_SORT -> {
+                            mainActivity.autoSortApps()
+                            true
+                        }
+
+                        MENU_CREATE_FOLDER -> {
+                            val suggestedName = mainActivity.getFolderNameForApps(listOf(item.activityInfo.packageName))
+                            val editText = EditText(mainActivity)
+                            editText.setText(suggestedName)
+                            AlertDialog.Builder(mainActivity)
+                                .setTitle("New Folder")
+                                .setView(editText)
+                                .setPositiveButton("Create") { _, _ ->
+                                    val name = editText.text.toString().ifEmpty { suggestedName }
+                                    items[pos] = Folder(name, mutableListOf(item.activityInfo.packageName))
+                                    notifyItemChanged(pos)
+                                    mainActivity.saveAppOrder()
+                                }
+                                .setNegativeButton("Cancel", null)
+                                .show()
+                            true
+                        }
+
+                        MENU_EMPTY_ALL_FOLDERS -> {
+                            mainActivity.emptyAllFolders()
+                            true
+                        }
+
+                        MENU_MORE_INFO -> {
+                            mainActivity.showAppDetails(item.activityInfo.packageName)
+                            true
+                        }
+
+                        else -> false
                     }
-                    MENU_CREATE_FOLDER -> {
-                        val suggestedName = mainActivity.getFolderNameForApps(listOf(item.activityInfo.packageName))
-                        val editText = EditText(mainActivity)
-                        editText.setText(suggestedName)
-                        AlertDialog.Builder(mainActivity)
-                            .setTitle("New Folder")
-                            .setView(editText)
-                            .setPositiveButton("Create") { _, _ ->
-                                val name = editText.text.toString().ifEmpty { suggestedName }
-                                items[pos] = Folder(name, mutableListOf(item.activityInfo.packageName))
-                                notifyItemChanged(pos)
-                                mainActivity.saveAppOrder()
-                            }
-                            .setNegativeButton("Cancel", null)
-                            .show()
-                        true
-                    }
-                    MENU_EMPTY_ALL_FOLDERS -> {
-                        mainActivity.emptyAllFolders()
-                        true
-                    }
-                    MENU_MORE_INFO -> {
-                        mainActivity.showAppDetails(item.activityInfo.packageName)
-                        true
-                    }
-                    else -> false
                 }
             }
             mainActivity.popupMenu?.show()
             return true
         }
+
+        override fun onDrag(v: View, event: DragEvent): Boolean {
+            val toPosition = bindingAdapterPosition
+
+            when (event.action) {
+                DragEvent.ACTION_DRAG_STARTED -> {
+                    return true
+                }
+                DragEvent.ACTION_DRAG_ENTERED -> {
+                    v.alpha = 0.5f
+                    return true
+                }
+                DragEvent.ACTION_DRAG_LOCATION -> {
+                    return true
+                }
+                DragEvent.ACTION_DRAG_EXITED -> {
+                    v.alpha = 1f
+                    return true
+                }
+                DragEvent.ACTION_DROP -> {
+                    val fromPosition = event.clipData.getItemAt(0).text.toString().toInt()
+                    val fromItem = items[fromPosition]
+                    val toItem = items[toPosition]
+
+                    if (fromItem is ResolveInfo && toItem is ResolveInfo) {
+                        // Create a new folder
+                        val folderApps = mutableListOf(toItem.activityInfo.packageName, fromItem.activityInfo.packageName)
+                        val suggestedName = mainActivity.getFolderNameForApps(folderApps)
+                        val newFolder = Folder(suggestedName, folderApps)
+
+                        items[toPosition] = newFolder
+                        items.removeAt(fromPosition)
+
+                        notifyItemChanged(toPosition)
+                        notifyItemRemoved(fromPosition)
+                        mainActivity.saveAppOrder()
+                    } else {
+                        // Reorder
+                        val movedItem = items.removeAt(fromPosition)
+                        items.add(toPosition, movedItem)
+                        notifyItemMoved(fromPosition, toPosition)
+                        mainActivity.saveAppOrder()
+                    }
+                    return true
+                }
+                DragEvent.ACTION_DRAG_ENDED -> {
+                    v.alpha = 1f
+                    return true
+                }
+                else -> return false
+            }
+        }
     }
 
-    inner class FolderViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView), View.OnClickListener, View.OnLongClickListener {
+    inner class FolderViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView), View.OnClickListener, View.OnLongClickListener, View.OnDragListener {
         val folderName: TextView = itemView.findViewById(R.id.folder_name)
         val folderIcon: FolderIconView = itemView.findViewById(R.id.folder_icon)
 
         init {
             itemView.setOnClickListener(this)
             itemView.setOnLongClickListener(this)
+            itemView.setOnDragListener(this)
         }
 
         override fun onClick(v: View?) {
@@ -146,14 +212,18 @@ class AppsAdapter(
         }
 
         override fun onLongClick(v: View): Boolean {
-            mainActivity.popupMenu?.dismiss()
             val pos = bindingAdapterPosition
             if (pos == RecyclerView.NO_POSITION) return false
 
             val item = items[pos] as? Folder ?: return false
 
-            itemTouchHelper.startDrag(this)
+            val clipDataItem = ClipData.Item(pos.toString())
+            val clipData = ClipData("drag-folder", arrayOf(ClipDescription.MIMETYPE_TEXT_PLAIN), clipDataItem)
 
+            val dragShadowBuilder = View.DragShadowBuilder(v)
+            v.startDragAndDrop(clipData, dragShadowBuilder, v, 0)
+
+            mainActivity.popupMenu?.dismiss()
             mainActivity.popupMenu = PopupMenu(v.context, v)
             mainActivity.popupMenu?.setOnDismissListener { mainActivity.popupMenu = null }
             mainActivity.popupMenu?.menu?.add(MENU_RENAME)
@@ -177,23 +247,75 @@ class AppsAdapter(
                             .show()
                         true
                     }
+
                     MENU_EMPTY_FOLDER -> {
                         mainActivity.emptyFolder(item)
                         true
                     }
+
                     MENU_AUTO_SORT -> {
                         mainActivity.autoSortApps()
                         true
                     }
+
                     MENU_EMPTY_ALL_FOLDERS -> {
                         mainActivity.emptyAllFolders()
                         true
                     }
+
                     else -> false
                 }
             }
             mainActivity.popupMenu?.show()
             return true
+        }
+
+        override fun onDrag(v: View, event: DragEvent): Boolean {
+            val toPosition = bindingAdapterPosition
+
+            when (event.action) {
+                DragEvent.ACTION_DRAG_STARTED -> {
+                    return true
+                }
+                DragEvent.ACTION_DRAG_ENTERED -> {
+                    v.alpha = 0.5f
+                    return true
+                }
+                DragEvent.ACTION_DRAG_LOCATION -> {
+                    return true
+                }
+                DragEvent.ACTION_DRAG_EXITED -> {
+                    v.alpha = 1f
+                    return true
+                }
+                DragEvent.ACTION_DROP -> {
+                    val fromPosition = event.clipData.getItemAt(0).text.toString().toInt()
+                    val fromItem = items[fromPosition]
+                    val toItem = items[toPosition]
+
+                    if (fromItem is ResolveInfo && toItem is Folder) {
+                        // Add app to existing folder
+                        toItem.apps.add(fromItem.activityInfo.packageName)
+                        items.removeAt(fromPosition)
+
+                        notifyItemRemoved(fromPosition)
+                        notifyItemChanged(if (fromPosition < toPosition) toPosition - 1 else toPosition)
+                        mainActivity.saveAppOrder()
+                    } else {
+                        // Reorder
+                        val movedItem = items.removeAt(fromPosition)
+                        items.add(toPosition, movedItem)
+                        notifyItemMoved(fromPosition, toPosition)
+                        mainActivity.saveAppOrder()
+                    }
+                    return true
+                }
+                DragEvent.ACTION_DRAG_ENDED -> {
+                    v.alpha = 1f
+                    return true
+                }
+                else -> return false
+            }
         }
     }
 
