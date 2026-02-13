@@ -138,6 +138,7 @@ class AppsAdapter(
 
             when (event.action) {
                 DragEvent.ACTION_DRAG_STARTED -> {
+                    mainActivity.popupMenu?.dismiss()
                     return true
                 }
                 DragEvent.ACTION_DRAG_ENTERED -> {
@@ -275,6 +276,7 @@ class AppsAdapter(
 
             when (event.action) {
                 DragEvent.ACTION_DRAG_STARTED -> {
+                    mainActivity.popupMenu?.dismiss()
                     return true
                 }
                 DragEvent.ACTION_DRAG_ENTERED -> {
