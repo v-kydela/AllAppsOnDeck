@@ -1,8 +1,6 @@
 package com.tharos.allappsondeck
 
 import android.app.AlertDialog
-import android.content.ClipData
-import android.content.ClipDescription
 import android.content.pm.ResolveInfo
 import android.view.DragEvent
 import android.view.LayoutInflater
@@ -74,17 +72,21 @@ class AppsAdapter(
             val pos = bindingAdapterPosition
             if (pos == RecyclerView.NO_POSITION) return false
 
+            // Set the view that was long-pressed in MainActivity
+            mainActivity.longPressedView = v
+
             val item = items[pos]
-
-            val clipDataItem = ClipData.Item(pos.toString())
-            val clipData = ClipData("drag-app", arrayOf(ClipDescription.MIMETYPE_TEXT_PLAIN), clipDataItem)
-
-            val dragShadowBuilder = View.DragShadowBuilder(v)
-            v.startDragAndDrop(clipData, dragShadowBuilder, v, 0)
 
             mainActivity.popupMenu?.dismiss()
             mainActivity.popupMenu = PopupMenu(v.context, v)
-            mainActivity.popupMenu?.setOnDismissListener { mainActivity.popupMenu = null }
+            mainActivity.popupMenu?.setOnDismissListener {
+                mainActivity.popupMenu = null
+                // If the menu is dismissed without starting a drag, reset the long-press state
+                if (!mainActivity.isDragging) {
+                    mainActivity.longPressedView = null
+                }
+            }
+
             if (item is ResolveInfo) {
                 mainActivity.popupMenu?.menu?.add(MENU_AUTO_SORT)
                 mainActivity.popupMenu?.menu?.add(MENU_CREATE_FOLDER)
@@ -218,15 +220,18 @@ class AppsAdapter(
 
             val item = items[pos] as? Folder ?: return false
 
-            val clipDataItem = ClipData.Item(pos.toString())
-            val clipData = ClipData("drag-folder", arrayOf(ClipDescription.MIMETYPE_TEXT_PLAIN), clipDataItem)
+            // Set the view that was long-pressed in MainActivity
+            mainActivity.longPressedView = v
 
-            val dragShadowBuilder = View.DragShadowBuilder(v)
-            v.startDragAndDrop(clipData, dragShadowBuilder, v, 0)
-
+            // --- DIALOG LOGIC ---
             mainActivity.popupMenu?.dismiss()
             mainActivity.popupMenu = PopupMenu(v.context, v)
-            mainActivity.popupMenu?.setOnDismissListener { mainActivity.popupMenu = null }
+            mainActivity.popupMenu?.setOnDismissListener {
+                mainActivity.popupMenu = null
+                if (!mainActivity.isDragging) {
+                    mainActivity.longPressedView = null
+                }
+            }
             mainActivity.popupMenu?.menu?.add(MENU_RENAME)
             mainActivity.popupMenu?.menu?.add(MENU_EMPTY_FOLDER)
             mainActivity.popupMenu?.menu?.add(MENU_AUTO_SORT)

@@ -3,6 +3,8 @@ package com.tharos.allappsondeck
 import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.content.BroadcastReceiver
+import android.content.ClipData
+import android.content.ClipDescription
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -12,6 +14,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
@@ -29,12 +32,75 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import kotlin.math.abs
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var appsList: RecyclerView
     internal var popupMenu: PopupMenu? = null
     private lateinit var items: MutableList<Any>
+
+    internal var isDragging = false
+    private var startX = 0f
+    private var startY = 0f
+    var longPressedView: View? = null
+
+    val appTouchListener = View.OnTouchListener { v, event ->        // This is a simple click-detection mechanism.
+        // We need this to manually call performClick() for accessibility.
+        val isClick = (event.action == MotionEvent.ACTION_UP &&
+                !isDragging &&
+                (event.eventTime - event.downTime) < android.view.ViewConfiguration.getTapTimeout())
+
+        // If a click is detected, perform the click and stop processing this touch event.
+        if (isClick) {
+            v.performClick()
+            // By returning here, we prevent the 'when' block from executing for a simple click.
+            return@OnTouchListener true
+        }
+
+        when (event.action) {
+            MotionEvent.ACTION_DOWN -> {
+                startX = event.x
+                startY = event.y
+                isDragging = false // Reset dragging flag
+                // Return false so that onLongClick can still be triggered.
+                false
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val viewToDrag = longPressedView
+                // Check if a long press has occurred and we are not already dragging
+                if (viewToDrag != null && !isDragging) {
+                    val touchSlop = android.view.ViewConfiguration.get(v.context).scaledTouchSlop
+                    // Check if the finger has moved far enough to be considered a drag
+                    if (abs(event.x - startX) > touchSlop || abs(event.y - startY) > touchSlop) {
+                        popupMenu?.dismiss() // Dismiss the menu
+                        val position = appsList.getChildViewHolder(viewToDrag)?.bindingAdapterPosition
+                        if (position != null) {
+                            val clipDataItem = ClipData.Item(position.toString())
+                            val mimeTypes = arrayOf(ClipDescription.MIMETYPE_TEXT_PLAIN)
+                            val clipData = ClipData("drag-app", mimeTypes, clipDataItem)
+                            val dragShadowBuilder = View.DragShadowBuilder(viewToDrag)
+
+                            // Pass the local reference 'viewToDrag' as the local state.
+                            // This object will not be nulled out during the drag operation.
+                            appsList.startDragAndDrop(clipData, dragShadowBuilder, viewToDrag, 0)
+                        }
+                        isDragging = true // Mark that we are now dragging
+                        longPressedView = null // It's now safe to nullify the class property.
+                    }
+                }
+                // If dragging, consume the event
+                isDragging
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                // This block now only runs if the gesture ended but wasn't a click (e.g., a long-press without a drag).
+                longPressedView = null
+                isDragging = false
+                false // Allow other events to process if needed
+            }
+            else -> false
+        }
+    }
 
     private val refreshReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -52,6 +118,7 @@ class MainActivity : AppCompatActivity() {
         private const val LAYOUT_KEY = "app_layout_v4" // Upgraded key for unified state
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -71,6 +138,7 @@ class MainActivity : AppCompatActivity() {
 
         val intentFilter = IntentFilter("com.tharos.allappsondeck.REFRESH_APPS")
         ContextCompat.registerReceiver(this, refreshReceiver, intentFilter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        appsList.setOnTouchListener(appTouchListener)
     }
 
     fun showAppDetails(packageName: String) {
