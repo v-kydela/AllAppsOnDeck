@@ -156,6 +156,7 @@ class AppsAdapter(
                 }
                 DragEvent.ACTION_DROP -> {
                     val fromPosition = event.clipData.getItemAt(0).text.toString().toInt()
+                    if (toPosition == fromPosition) return true
                     val fromItem = items[fromPosition]
                     val toItem = items[toPosition]
 
@@ -297,6 +298,7 @@ class AppsAdapter(
                 }
                 DragEvent.ACTION_DROP -> {
                     val fromPosition = event.clipData.getItemAt(0).text.toString().toInt()
+                    if (toPosition == fromPosition) return true
                     val fromItem = items[fromPosition]
                     val toItem = items[toPosition]
 
