@@ -84,6 +84,9 @@ class MainActivity : AppCompatActivity() {
                             // Pass the local reference 'viewToDrag' as the local state.
                             // This object will not be nulled out during the drag operation.
                             appsList.startDragAndDrop(clipData, dragShadowBuilder, viewToDrag, 0)
+
+                            // Hide the original view to prevent the "duplicate" effect.
+                            viewToDrag.visibility = View.INVISIBLE
                         }
                         isDragging = true // Mark that we are now dragging
                         longPressedView = null // It's now safe to nullify the class property.
@@ -100,6 +103,18 @@ class MainActivity : AppCompatActivity() {
             }
             else -> false
         }
+    }
+
+    private val appDragListener = View.OnDragListener { _, event ->
+        if (event.action == android.view.DragEvent.ACTION_DRAG_ENDED) {
+            // Get the original view back from the localState
+            val view = event.localState as? View
+            // Post the visibility change to ensure it runs on the UI thread safely
+            view?.post { view.visibility = View.VISIBLE }
+            // Reset the dragging state
+            isDragging = false
+        }
+        true // Indicate the event was handled
     }
 
     private val refreshReceiver = object : BroadcastReceiver() {
@@ -139,6 +154,7 @@ class MainActivity : AppCompatActivity() {
         val intentFilter = IntentFilter("com.tharos.allappsondeck.REFRESH_APPS")
         ContextCompat.registerReceiver(this, refreshReceiver, intentFilter, ContextCompat.RECEIVER_NOT_EXPORTED)
         appsList.setOnTouchListener(appTouchListener)
+        appsList.setOnDragListener(appDragListener)
     }
 
     fun showAppDetails(packageName: String) {
