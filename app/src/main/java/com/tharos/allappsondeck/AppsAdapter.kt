@@ -28,19 +28,8 @@ class AppsAdapter(
         private const val MENU_EMPTY_FOLDER = "Empty Folder"
     }
 
-    override fun getItemViewType(position: Int): Int {
-        return when (items[position]) {
-            is ResolveInfo -> TYPE_APP
-            is Folder -> TYPE_FOLDER
-            else -> throw IllegalArgumentException("Invalid type of item at position $position")
-        }
-    }
-
-    inner class AppViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView), View.OnClickListener, View.OnLongClickListener, View.OnDragListener {
-        val appName: TextView = itemView.findViewById(R.id.app_name)
-
+    abstract inner class BaseViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView), View.OnClickListener, View.OnLongClickListener, View.OnDragListener {
         init {
-            (itemView as TextView).compoundDrawablePadding = 16
             itemView.setOnClickListener(this)
             itemView.setOnLongClickListener(this)
             itemView.setOnDragListener(this)
@@ -51,7 +40,93 @@ class AppsAdapter(
                 mainActivity.popupMenu?.dismiss()
                 return
             }
+            handleItemClick()
+        }
 
+        abstract fun handleItemClick()
+
+        override fun onLongClick(v: View): Boolean {
+            val pos = bindingAdapterPosition
+            if (pos == RecyclerView.NO_POSITION) return false
+
+            mainActivity.longPressedView = v
+
+            mainActivity.popupMenu?.dismiss()
+            mainActivity.popupMenu = PopupMenu(v.context, v)
+            mainActivity.popupMenu?.setOnDismissListener {
+                mainActivity.popupMenu = null
+                if (!mainActivity.isDragging) {
+                    mainActivity.longPressedView = null
+                }
+            }
+
+            createPopupMenu()
+
+            mainActivity.popupMenu?.show()
+            return true
+        }
+
+        abstract fun createPopupMenu()
+
+        override fun onDrag(v: View, event: DragEvent): Boolean {
+            val toPosition = bindingAdapterPosition
+            when (event.action) {
+                DragEvent.ACTION_DRAG_STARTED -> {
+                    mainActivity.popupMenu?.dismiss()
+                    return true
+                }
+                DragEvent.ACTION_DRAG_ENTERED -> {
+                    v.alpha = 0.5f
+                    return true
+                }
+                DragEvent.ACTION_DRAG_LOCATION -> {
+                    return true
+                }
+                DragEvent.ACTION_DRAG_EXITED -> {
+                    v.alpha = 1f
+                    return true
+                }
+                DragEvent.ACTION_DROP -> {
+                    v.alpha = 1f
+                    val fromPosition = event.clipData.getItemAt(0).text.toString().toInt()
+                    if (toPosition == fromPosition || toPosition == RecyclerView.NO_POSITION) return true
+
+                    if (!handleSpecificDrop(fromPosition, toPosition)) {
+                        // Reorder
+                        val movedItem = items.removeAt(fromPosition)
+                        items.add(toPosition, movedItem)
+                        notifyItemMoved(fromPosition, toPosition)
+                        mainActivity.saveAppOrder()
+                    }
+                    return true
+                }
+                DragEvent.ACTION_DRAG_ENDED -> {
+                    v.alpha = 1f
+                    return true
+                }
+                else -> return false
+            }
+        }
+
+        abstract fun handleSpecificDrop(fromPosition: Int, toPosition: Int): Boolean
+    }
+
+    override fun getItemViewType(position: Int): Int {
+        return when (items[position]) {
+            is ResolveInfo -> TYPE_APP
+            is Folder -> TYPE_FOLDER
+            else -> throw IllegalArgumentException("Invalid type of item at position $position")
+        }
+    }
+
+    inner class AppViewHolder(itemView: View) : BaseViewHolder(itemView) {
+        val appName: TextView = itemView.findViewById(R.id.app_name)
+
+        init {
+            (itemView as TextView).compoundDrawablePadding = 16
+        }
+
+        override fun handleItemClick() {
             val pos = bindingAdapterPosition
             if (pos != RecyclerView.NO_POSITION) {
                 val item = items[pos]
@@ -68,24 +143,11 @@ class AppsAdapter(
             }
         }
 
-        override fun onLongClick(v: View): Boolean {
+        override fun createPopupMenu() {
             val pos = bindingAdapterPosition
-            if (pos == RecyclerView.NO_POSITION) return false
-
-            // Set the view that was long-pressed in MainActivity
-            mainActivity.longPressedView = v
+            if (pos == RecyclerView.NO_POSITION) return
 
             val item = items[pos]
-
-            mainActivity.popupMenu?.dismiss()
-            mainActivity.popupMenu = PopupMenu(v.context, v)
-            mainActivity.popupMenu?.setOnDismissListener {
-                mainActivity.popupMenu = null
-                // If the menu is dismissed without starting a drag, reset the long-press state
-                if (!mainActivity.isDragging) {
-                    mainActivity.longPressedView = null
-                }
-            }
 
             if (item is ResolveInfo) {
                 mainActivity.popupMenu?.menu?.add(MENU_AUTO_SORT)
@@ -131,81 +193,35 @@ class AppsAdapter(
                     }
                 }
             }
-            mainActivity.popupMenu?.show()
-            return true
         }
 
-        override fun onDrag(v: View, event: DragEvent): Boolean {
-            val toPosition = bindingAdapterPosition
+        override fun handleSpecificDrop(fromPosition: Int, toPosition: Int): Boolean {
+            val fromItem = items[fromPosition]
+            val toItem = items[toPosition]
 
-            when (event.action) {
-                DragEvent.ACTION_DRAG_STARTED -> {
-                    mainActivity.popupMenu?.dismiss()
-                    return true
-                }
-                DragEvent.ACTION_DRAG_ENTERED -> {
-                    v.alpha = 0.5f
-                    return true
-                }
-                DragEvent.ACTION_DRAG_LOCATION -> {
-                    return true
-                }
-                DragEvent.ACTION_DRAG_EXITED -> {
-                    v.alpha = 1f
-                    return true
-                }
-                DragEvent.ACTION_DROP -> {
-                    val fromPosition = event.clipData.getItemAt(0).text.toString().toInt()
-                    if (toPosition == fromPosition) return true
-                    val fromItem = items[fromPosition]
-                    val toItem = items[toPosition]
+            if (fromItem is ResolveInfo && toItem is ResolveInfo) {
+                // Create a new folder
+                val folderApps = mutableListOf(toItem.activityInfo.packageName, fromItem.activityInfo.packageName)
+                val suggestedName = mainActivity.getFolderNameForApps(folderApps)
+                val newFolder = Folder(suggestedName, folderApps)
 
-                    if (fromItem is ResolveInfo && toItem is ResolveInfo) {
-                        // Create a new folder
-                        val folderApps = mutableListOf(toItem.activityInfo.packageName, fromItem.activityInfo.packageName)
-                        val suggestedName = mainActivity.getFolderNameForApps(folderApps)
-                        val newFolder = Folder(suggestedName, folderApps)
+                items[toPosition] = newFolder
+                items.removeAt(fromPosition)
 
-                        items[toPosition] = newFolder
-                        items.removeAt(fromPosition)
-
-                        notifyItemChanged(toPosition)
-                        notifyItemRemoved(fromPosition)
-                        mainActivity.saveAppOrder()
-                    } else {
-                        // Reorder
-                        val movedItem = items.removeAt(fromPosition)
-                        items.add(toPosition, movedItem)
-                        notifyItemMoved(fromPosition, toPosition)
-                        mainActivity.saveAppOrder()
-                    }
-                    return true
-                }
-                DragEvent.ACTION_DRAG_ENDED -> {
-                    v.alpha = 1f
-                    return true
-                }
-                else -> return false
+                notifyItemChanged(toPosition)
+                notifyItemRemoved(fromPosition)
+                mainActivity.saveAppOrder()
+                return true
             }
+            return false
         }
     }
 
-    inner class FolderViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView), View.OnClickListener, View.OnLongClickListener, View.OnDragListener {
+    inner class FolderViewHolder(itemView: View) : BaseViewHolder(itemView) {
         val folderName: TextView = itemView.findViewById(R.id.folder_name)
         val folderIcon: FolderIconView = itemView.findViewById(R.id.folder_icon)
 
-        init {
-            itemView.setOnClickListener(this)
-            itemView.setOnLongClickListener(this)
-            itemView.setOnDragListener(this)
-        }
-
-        override fun onClick(v: View?) {
-            if (mainActivity.popupMenu != null) {
-                mainActivity.popupMenu?.dismiss()
-                return
-            }
-
+        override fun handleItemClick() {
             val pos = bindingAdapterPosition
             if (pos != RecyclerView.NO_POSITION) {
                 val item = items[pos]
@@ -215,24 +231,12 @@ class AppsAdapter(
             }
         }
 
-        override fun onLongClick(v: View): Boolean {
+        override fun createPopupMenu() {
             val pos = bindingAdapterPosition
-            if (pos == RecyclerView.NO_POSITION) return false
+            if (pos == RecyclerView.NO_POSITION) return
 
-            val item = items[pos] as? Folder ?: return false
+            val item = items[pos] as? Folder ?: return
 
-            // Set the view that was long-pressed in MainActivity
-            mainActivity.longPressedView = v
-
-            // --- DIALOG LOGIC ---
-            mainActivity.popupMenu?.dismiss()
-            mainActivity.popupMenu = PopupMenu(v.context, v)
-            mainActivity.popupMenu?.setOnDismissListener {
-                mainActivity.popupMenu = null
-                if (!mainActivity.isDragging) {
-                    mainActivity.longPressedView = null
-                }
-            }
             mainActivity.popupMenu?.menu?.add(MENU_RENAME)
             mainActivity.popupMenu?.menu?.add(MENU_EMPTY_FOLDER)
             mainActivity.popupMenu?.menu?.add(MENU_AUTO_SORT)
@@ -273,58 +277,23 @@ class AppsAdapter(
                     else -> false
                 }
             }
-            mainActivity.popupMenu?.show()
-            return true
         }
 
-        override fun onDrag(v: View, event: DragEvent): Boolean {
-            val toPosition = bindingAdapterPosition
+        override fun handleSpecificDrop(fromPosition: Int, toPosition: Int): Boolean {
+            val fromItem = items[fromPosition]
+            val toItem = items[toPosition]
 
-            when (event.action) {
-                DragEvent.ACTION_DRAG_STARTED -> {
-                    mainActivity.popupMenu?.dismiss()
-                    return true
-                }
-                DragEvent.ACTION_DRAG_ENTERED -> {
-                    v.alpha = 0.5f
-                    return true
-                }
-                DragEvent.ACTION_DRAG_LOCATION -> {
-                    return true
-                }
-                DragEvent.ACTION_DRAG_EXITED -> {
-                    v.alpha = 1f
-                    return true
-                }
-                DragEvent.ACTION_DROP -> {
-                    val fromPosition = event.clipData.getItemAt(0).text.toString().toInt()
-                    if (toPosition == fromPosition) return true
-                    val fromItem = items[fromPosition]
-                    val toItem = items[toPosition]
+            if (fromItem is ResolveInfo && toItem is Folder) {
+                // Add app to existing folder
+                toItem.apps.add(fromItem.activityInfo.packageName)
+                items.removeAt(fromPosition)
 
-                    if (fromItem is ResolveInfo && toItem is Folder) {
-                        // Add app to existing folder
-                        toItem.apps.add(fromItem.activityInfo.packageName)
-                        items.removeAt(fromPosition)
-
-                        notifyItemRemoved(fromPosition)
-                        notifyItemChanged(if (fromPosition < toPosition) toPosition - 1 else toPosition)
-                        mainActivity.saveAppOrder()
-                    } else {
-                        // Reorder
-                        val movedItem = items.removeAt(fromPosition)
-                        items.add(toPosition, movedItem)
-                        notifyItemMoved(fromPosition, toPosition)
-                        mainActivity.saveAppOrder()
-                    }
-                    return true
-                }
-                DragEvent.ACTION_DRAG_ENDED -> {
-                    v.alpha = 1f
-                    return true
-                }
-                else -> return false
+                notifyItemRemoved(fromPosition)
+                notifyItemChanged(if (fromPosition < toPosition) toPosition - 1 else toPosition)
+                mainActivity.saveAppOrder()
+                return true
             }
+            return false
         }
     }
 
