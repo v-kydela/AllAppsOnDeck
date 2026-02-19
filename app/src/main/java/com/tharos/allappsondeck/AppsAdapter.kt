@@ -70,16 +70,35 @@ class AppsAdapter(
 
         override fun onDrag(v: View, event: DragEvent): Boolean {
             val toPosition = bindingAdapterPosition
+            if (toPosition == RecyclerView.NO_POSITION) return false
+
             when (event.action) {
                 DragEvent.ACTION_DRAG_STARTED -> {
                     mainActivity.popupMenu?.dismiss()
+                    mainActivity.isDragging = true // Set dragging flag
                     return true
                 }
                 DragEvent.ACTION_DRAG_ENTERED -> {
-                    v.alpha = 0.5f
+                    // Determine highlight based on drop location within the view
+                    val dropX = event.x
+                    val viewWidth = v.width
+                    val oneThird = viewWidth / 3
+
+                    // Highlight only if dropping in the middle (folder zone)
+                    if (dropX > oneThird && dropX < viewWidth - oneThird) {
+                        v.alpha = 0.5f
+                    }
                     return true
                 }
                 DragEvent.ACTION_DRAG_LOCATION -> {
+                    // Continuously update highlight based on location
+                    v.alpha = 1f // Reset first
+                    val dropX = event.x
+                    val viewWidth = v.width
+                    val oneThird = viewWidth / 3
+                    if (dropX > oneThird && dropX < viewWidth - oneThird) {
+                        v.alpha = 0.5f
+                    }
                     return true
                 }
                 DragEvent.ACTION_DRAG_EXITED -> {
@@ -88,20 +107,53 @@ class AppsAdapter(
                 }
                 DragEvent.ACTION_DROP -> {
                     v.alpha = 1f
-                    val fromPosition = event.clipData.getItemAt(0).text.toString().toInt()
-                    if (toPosition == fromPosition || toPosition == RecyclerView.NO_POSITION) return true
+                    // Get fromPosition ONLY on drop. This is the crucial fix.
+                    val fromPosition = event.clipData?.getItemAt(0)?.text?.toString()?.toIntOrNull() ?: return false
 
-                    if (!handleSpecificDrop(fromPosition, toPosition)) {
-                        // Reorder
-                        val movedItem = items.removeAt(fromPosition)
-                        items.add(toPosition, movedItem)
-                        notifyItemMoved(fromPosition, toPosition)
-                        mainActivity.saveAppOrder()
+                    if (toPosition == fromPosition) return true
+
+                    val dropX = event.x
+                    val viewWidth = v.width
+                    val oneThird = viewWidth / 3
+
+                    when {
+                        // Drop on left third
+                        dropX <= oneThird -> {
+                            // Reorder BEFORE
+                            val movedItem = items.removeAt(fromPosition)
+                            val finalPosition = if (fromPosition < toPosition) toPosition - 1 else toPosition
+                            if (finalPosition <= items.size) {
+                                items.add(finalPosition, movedItem)
+                                notifyItemMoved(fromPosition, finalPosition)
+                            }
+                            mainActivity.saveAppOrder()
+                        }
+                        // Drop on right third
+                        dropX >= viewWidth - oneThird -> {
+                            // Reorder AFTER
+                            val movedItem = items.removeAt(fromPosition)
+                            val targetPos = toPosition + 1
+                            val finalPosition = if (fromPosition < targetPos) targetPos - 1 else targetPos
+                            if (finalPosition <= items.size) {
+                                items.add(finalPosition, movedItem)
+                                notifyItemMoved(fromPosition, finalPosition)
+                            }
+                            mainActivity.saveAppOrder()
+                        }
+                        // Drop in the middle
+                        else -> {
+                            handleSpecificDrop(fromPosition, toPosition)
+                        }
                     }
                     return true
                 }
                 DragEvent.ACTION_DRAG_ENDED -> {
                     v.alpha = 1f
+                    mainActivity.isDragging = false // Unset dragging flag
+                    mainActivity.longPressedView = null // Clear reference
+                    // Also ensure any lingering alpha from a canceled drag is reset
+                    (v.parent as? RecyclerView)
+                        ?.findViewHolderForAdapterPosition(toPosition)?.itemView?.alpha = 1f
                     return true
                 }
                 else -> return false
@@ -123,7 +175,7 @@ class AppsAdapter(
         val appName: TextView = itemView.findViewById(R.id.app_name)
 
         init {
-            (itemView as TextView).compoundDrawablePadding = 16
+            appName.compoundDrawablePadding = 16
         }
 
         override fun handleItemClick() {
@@ -205,11 +257,13 @@ class AppsAdapter(
                 val suggestedName = mainActivity.getFolderNameForApps(folderApps)
                 val newFolder = Folder(suggestedName, folderApps)
 
-                items[toPosition] = newFolder
+                val finalToPosition = if (fromPosition < toPosition) toPosition - 1 else toPosition
                 items.removeAt(fromPosition)
+                items[finalToPosition] = newFolder
 
-                notifyItemChanged(toPosition)
+                notifyItemChanged(finalToPosition)
                 notifyItemRemoved(fromPosition)
+
                 mainActivity.saveAppOrder()
                 return true
             }
@@ -288,8 +342,9 @@ class AppsAdapter(
                 toItem.apps.add(fromItem.activityInfo.packageName)
                 items.removeAt(fromPosition)
 
+                val finalToPosition = if (fromPosition < toPosition) toPosition - 1 else toPosition
                 notifyItemRemoved(fromPosition)
-                notifyItemChanged(if (fromPosition < toPosition) toPosition - 1 else toPosition)
+                notifyItemChanged(finalToPosition)
                 mainActivity.saveAppOrder()
                 return true
             }

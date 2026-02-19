@@ -2,23 +2,47 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:gravity="center_horizontal"
-    android:orientation="vertical"
-    android:padding="8dp">
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
 
-    <com.tharos.allappsondeck.FolderIconView
-        android:id="@+id/folder_icon"
-        android:layout_width="48dp"
-        android:layout_height="48dp" />
+    <!-- Left drop zone for reordering (move BEFORE) -->
+    <View
+        android:id="@+id/drop_zone_left"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1" />
 
-    <TextView
-        android:id="@+id/folder_name"
+    <!-- Container for the visible folder icon and name -->
+    <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="center_horizontal"
-        android:ellipsize="end"
-        android:maxLines="1"
-        android:textColor="@android:color/white"
-        android:textSize="12sp" />
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp">
+
+        <com.tharos.allappsondeck.FolderIconView
+            android:id="@+id/folder_icon"
+            android:layout_width="48dp"
+            android:layout_height="48dp" />
+
+        <TextView
+            android:id="@+id/folder_name"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@android:color/white"
+            android:textSize="12sp" />
+
+    </LinearLayout>
+
+    <!-- Right drop zone for reordering (move AFTER) -->
+    <View
+        android:id="@+id/drop_zone_right"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1" />
 
 </LinearLayout>
