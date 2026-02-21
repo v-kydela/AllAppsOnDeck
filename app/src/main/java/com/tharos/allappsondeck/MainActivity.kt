@@ -16,8 +16,6 @@ import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
-import android.view.ViewGroup
-import android.widget.ImageView
 import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
@@ -45,6 +43,7 @@ class MainActivity : AppCompatActivity() {
     private var startY = 0f
     var longPressedView: View? = null
 
+    @SuppressLint("ClickableViewAccessibility")
     val appTouchListener = View.OnTouchListener { v, event ->        // This is a simple click-detection mechanism.
         // We need this to manually call performClick() for accessibility.
         val isClick = (event.action == MotionEvent.ACTION_UP &&
@@ -57,6 +56,8 @@ class MainActivity : AppCompatActivity() {
             // By returning here, we prevent the 'when' block from executing for a simple click.
             return@OnTouchListener true
         }
+
+        val recyclerView = v as? RecyclerView ?: return@OnTouchListener false
 
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
@@ -74,7 +75,7 @@ class MainActivity : AppCompatActivity() {
                     // Check if the finger has moved far enough to be considered a drag
                     if (abs(event.x - startX) > touchSlop || abs(event.y - startY) > touchSlop) {
                         popupMenu?.dismiss() // Dismiss the menu
-                        val position = appsList.getChildViewHolder(viewToDrag)?.bindingAdapterPosition
+                        val position = recyclerView.getChildViewHolder(viewToDrag)?.bindingAdapterPosition
                         if (position != null) {
                             val clipDataItem = ClipData.Item(position.toString())
                             val mimeTypes = arrayOf(ClipDescription.MIMETYPE_TEXT_PLAIN)
@@ -83,7 +84,7 @@ class MainActivity : AppCompatActivity() {
 
                             // Pass the local reference 'viewToDrag' as the local state.
                             // This object will not be nulled out during the drag operation.
-                            appsList.startDragAndDrop(clipData, dragShadowBuilder, viewToDrag, 0)
+                            recyclerView.startDragAndDrop(clipData, dragShadowBuilder, viewToDrag, 0)
 
                             // Hide the original view to prevent the "duplicate" effect.
                             viewToDrag.visibility = View.INVISIBLE
@@ -341,7 +342,7 @@ class MainActivity : AppCompatActivity() {
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit { putString(LAYOUT_KEY, layoutString) }
     }
 
-    @SuppressLint("NotifyDataSetChanged")
+    @SuppressLint("NotifyDataSetChanged", "ClickableViewAccessibility")
     internal fun showFolderDialog(folder: Folder) {
         val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_folder_view, null)
         val folderTitle = dialogView.findViewById<TextView>(R.id.folder_title)
@@ -356,88 +357,16 @@ class MainActivity : AppCompatActivity() {
 
         val mainIntent = Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER)
         val allApps = packageManager.queryIntentActivities(mainIntent, 0)
-        val folderApps = allApps.filter { app -> folder.apps.contains(app.activityInfo.packageName) }.toMutableList()
+        val folderAppsResolved = allApps.filter { app -> folder.apps.contains(app.activityInfo.packageName) }.toMutableList()
 
-        class FolderAppViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-            val appName: TextView = itemView.findViewById(R.id.app_name)
-            val appIcon: ImageView = itemView.findViewById(R.id.app_icon)
-        }
-
-        val adapter = object : RecyclerView.Adapter<FolderAppViewHolder>() {
-            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): FolderAppViewHolder {
-                val view = LayoutInflater.from(parent.context).inflate(R.layout.folder_app_item, parent, false)
-                return FolderAppViewHolder(view)
-            }
-
-            override fun onBindViewHolder(holder: FolderAppViewHolder, position: Int) {
-                val app = folderApps[position]
-
-                holder.appName.text = app.loadLabel(packageManager)
-                holder.appIcon.setImageDrawable(app.loadIcon(packageManager))
-
-                holder.itemView.setOnClickListener {
-                    val launchIntent = packageManager.getLaunchIntentForPackage(app.activityInfo.packageName)
-                    startActivity(launchIntent)
-                    dialog.dismiss()
-                }
-
-                holder.itemView.setOnLongClickListener {
-                    val popup = PopupMenu(this@MainActivity, it)
-                    popup.menu.add("Remove from Folder")
-                    popup.menu.add("More Info")
-                    popup.setOnMenuItemClickListener { menuItem ->
-                        when (menuItem.title) {
-                            "Remove from Folder" -> {
-                                val currentPosition = holder.bindingAdapterPosition
-                                if (currentPosition != RecyclerView.NO_POSITION) {
-                                    val removedAppInfo = folderApps.removeAt(currentPosition)
-                                    folder.apps.remove(removedAppInfo.activityInfo.packageName)
-                                    notifyItemRemoved(currentPosition)
-                                    notifyItemRangeChanged(currentPosition, folderApps.size)
-
-                                    // Also add it back to the main list
-                                    items.add(removedAppInfo)
-                                    appsList.adapter?.notifyItemInserted(items.size - 1)
-                                }
-
-                                saveAppOrder()
-
-                                if (folder.apps.isEmpty()) {
-                                    // Remove the folder itself if it's now empty
-                                    val folderIndex = items.indexOf(folder)
-                                    if (folderIndex != -1) {
-                                        items.removeAt(folderIndex)
-                                        appsList.adapter?.notifyItemRemoved(folderIndex)
-                                    }
-                                    dialog.dismiss()
-                                } else {
-                                    // Refresh the folder icon in the main grid
-                                    val folderIndex = items.indexOf(folder)
-                                    if (folderIndex != -1) {
-                                        appsList.adapter?.notifyItemChanged(folderIndex)
-                                    }
-                                }
-                                true
-                            }
-                            "More Info" -> {
-                                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                                intent.data = "package:${app.activityInfo.packageName}".toUri()
-                                settingsResultLauncher.launch(intent)
-                                dialog.dismiss()
-                                true
-                            }
-                            else -> false
-                        }
-                    }
-                    popup.show()
-                    true
-                }
-            }
-
-            override fun getItemCount(): Int = folderApps.size
-        }
-
+        val adapter = AppsAdapter(this, ArrayList(folderAppsResolved), true)
         folderAppsList.adapter = adapter
+        folderAppsList.setOnTouchListener(appTouchListener)
+        folderAppsList.setOnDragListener(appDragListener)
+
+        dialog.setOnDismissListener {
+            refreshApps()
+        }
 
         dialog.show()
     }
@@ -485,5 +414,22 @@ class MainActivity : AppCompatActivity() {
         saveAppOrder()
 
         Toast.makeText(this, "All folders have been emptied.", Toast.LENGTH_SHORT).show()
+    }
+
+    @SuppressLint("NotifyDataSetChanged")
+    internal fun removeAppFromFolder(app: ResolveInfo) {
+        val folder = items.find { it is Folder && it.apps.contains(app.activityInfo.packageName) } as? Folder ?: return
+
+        folder.apps.remove(app.activityInfo.packageName)
+        items.add(app)
+
+        if (folder.apps.isEmpty()) {
+            val folderIndex = items.indexOf(folder)
+            if (folderIndex != -1) {
+                items.removeAt(folderIndex)
+            }
+        }
+        appsList.adapter?.notifyDataSetChanged()
+        saveAppOrder()
     }
 }

@@ -14,7 +14,8 @@ import androidx.recyclerview.widget.RecyclerView
 
 class AppsAdapter(
     private val mainActivity: MainActivity,
-    private val items: MutableList<Any>
+    private val items: MutableList<Any>,
+    private val isFolderAdapter: Boolean = false
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     companion object {
@@ -26,6 +27,7 @@ class AppsAdapter(
         private const val MENU_MORE_INFO = "More Info"
         private const val MENU_RENAME = "Rename"
         private const val MENU_EMPTY_FOLDER = "Empty Folder"
+        private const val MENU_REMOVE_FROM_FOLDER = "Remove from Folder"
     }
 
     abstract inner class BaseViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView), View.OnClickListener, View.OnLongClickListener, View.OnDragListener {
@@ -72,6 +74,12 @@ class AppsAdapter(
             val toPosition = bindingAdapterPosition
             if (toPosition == RecyclerView.NO_POSITION) return false
 
+            val canDropInMiddle = when(this) {
+                is AppViewHolder -> !isFolderAdapter
+                is FolderViewHolder -> true
+                else -> false
+            }
+
             when (event.action) {
                 DragEvent.ACTION_DRAG_STARTED -> {
                     mainActivity.popupMenu?.dismiss()
@@ -85,7 +93,7 @@ class AppsAdapter(
                     val oneThird = viewWidth / 3
 
                     // Highlight only if dropping in the middle (folder zone)
-                    if (dropX > oneThird && dropX < viewWidth - oneThird) {
+                    if (canDropInMiddle && dropX > oneThird && dropX < viewWidth - oneThird) {
                         v.alpha = 0.5f
                     }
                     return true
@@ -96,7 +104,7 @@ class AppsAdapter(
                     val dropX = event.x
                     val viewWidth = v.width
                     val oneThird = viewWidth / 3
-                    if (dropX > oneThird && dropX < viewWidth - oneThird) {
+                    if (canDropInMiddle && dropX > oneThird && dropX < viewWidth - oneThird) {
                         v.alpha = 0.5f
                     }
                     return true
@@ -142,7 +150,9 @@ class AppsAdapter(
                         }
                         // Drop in the middle
                         else -> {
-                            handleSpecificDrop(fromPosition, toPosition)
+                            if(canDropInMiddle) {
+                                handleSpecificDrop(fromPosition, toPosition)
+                            }
                         }
                     }
                     return true
@@ -202,8 +212,12 @@ class AppsAdapter(
             val item = items[pos]
 
             if (item is ResolveInfo) {
+                if(isFolderAdapter) {
+                    mainActivity.popupMenu?.menu?.add(MENU_REMOVE_FROM_FOLDER)
+                } else {
+                    mainActivity.popupMenu?.menu?.add(MENU_CREATE_FOLDER)
+                }
                 mainActivity.popupMenu?.menu?.add(MENU_AUTO_SORT)
-                mainActivity.popupMenu?.menu?.add(MENU_CREATE_FOLDER)
                 mainActivity.popupMenu?.menu?.add(MENU_EMPTY_ALL_FOLDERS)
                 mainActivity.popupMenu?.menu?.add(MENU_MORE_INFO)
                 mainActivity.popupMenu?.setOnMenuItemClickListener { menuItem ->
@@ -238,6 +252,11 @@ class AppsAdapter(
 
                         MENU_MORE_INFO -> {
                             mainActivity.showAppDetails(item.activityInfo.packageName)
+                            true
+                        }
+
+                        MENU_REMOVE_FROM_FOLDER -> {
+                            mainActivity.removeAppFromFolder(item)
                             true
                         }
 
