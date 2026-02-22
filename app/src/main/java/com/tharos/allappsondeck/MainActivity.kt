@@ -77,8 +77,15 @@ class MainActivity : AppCompatActivity() {
                         popupMenu?.dismiss() // Dismiss the menu
                         val position = recyclerView.getChildViewHolder(viewToDrag)?.bindingAdapterPosition
                         if (position != null) {
+                            val item = items[position]
+                            val mimeType = when (item) {
+                                is ResolveInfo -> "vnd.android.cursor.item/app"
+                                is Folder -> "vnd.android.cursor.item/folder"
+                                else -> ClipDescription.MIMETYPE_TEXT_PLAIN
+                            }
+
                             val clipDataItem = ClipData.Item(position.toString())
-                            val mimeTypes = arrayOf(ClipDescription.MIMETYPE_TEXT_PLAIN)
+                            val mimeTypes = arrayOf(mimeType)
                             val clipData = ClipData("drag-app", mimeTypes, clipDataItem)
                             val dragShadowBuilder = View.DragShadowBuilder(viewToDrag)
 

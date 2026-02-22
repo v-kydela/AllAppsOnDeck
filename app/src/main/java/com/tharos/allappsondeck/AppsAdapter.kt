@@ -74,9 +74,11 @@ class AppsAdapter(
             val toPosition = bindingAdapterPosition
             if (toPosition == RecyclerView.NO_POSITION) return false
 
-            val canDropInMiddle = when(this) {
-                is AppViewHolder -> !isFolderAdapter
-                is FolderViewHolder -> true
+            val isDraggingApp = event.clipDescription?.hasMimeType("vnd.android.cursor.item/app") ?: false
+
+            val canDropInMiddle = when (this) {
+                is AppViewHolder -> !isFolderAdapter && isDraggingApp
+                is FolderViewHolder -> isDraggingApp
                 else -> false
             }
 
