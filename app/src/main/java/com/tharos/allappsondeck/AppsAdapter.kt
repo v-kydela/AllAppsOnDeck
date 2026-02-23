@@ -7,6 +7,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
@@ -185,10 +186,7 @@ class AppsAdapter(
 
     inner class AppViewHolder(itemView: View) : BaseViewHolder(itemView) {
         val appName: TextView = itemView.findViewById(R.id.app_name)
-
-        init {
-            appName.compoundDrawablePadding = 16
-        }
+        val appIcon: ImageView = itemView.findViewById(R.id.app_icon)
 
         override fun handleItemClick() {
             val pos = bindingAdapterPosition
@@ -391,11 +389,11 @@ class AppsAdapter(
         when (holder) {
             is AppViewHolder -> {
                 val app = items[position] as ResolveInfo
-                holder.appName.text = app.loadLabel(mainActivity.packageManager)
+                val appName = app.loadLabel(mainActivity.packageManager)
+                holder.appName.text = appName
+                holder.appIcon.contentDescription = appName
                 val icon = app.loadIcon(mainActivity.packageManager)
-                val iconSize = (48 * holder.itemView.context.resources.displayMetrics.density).toInt()
-                icon.setBounds(0, 0, iconSize, iconSize)
-                holder.appName.setCompoundDrawables(null, icon, null, null)
+                holder.appIcon.setImageDrawable(icon)
             }
             is FolderViewHolder -> {
                 val folder = items[position] as Folder

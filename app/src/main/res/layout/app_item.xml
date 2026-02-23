@@ -1,12 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<TextView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/app_name"
-    android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:drawablePadding="4dp"
-    android:ellipsize="end"
-    android:gravity="center_horizontal"
-    android:maxLines="1"
-    android:padding="8dp"
-    android:textColor="@android:color/white"
-    android:textSize="12sp" />
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    style="@style/ListItemContainer">
+
+    <ImageView
+        android:id="@+id/app_icon"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:contentDescription="@string/app_icon_description" />
+
+    <include
+        android:id="@+id/app_name"
+        layout="@layout/list_item_label" />
+
+</LinearLayout>

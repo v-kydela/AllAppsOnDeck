@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">All Apps On Deck</string>
+    <string name="app_icon_description">Application icon</string>
 </resources>
