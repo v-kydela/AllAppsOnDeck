@@ -22,6 +22,7 @@ class AppsAdapter(
     companion object {
         private const val TYPE_APP = 0
         private const val TYPE_FOLDER = 1
+        private const val TYPE_ACTION = 2
         private const val MENU_AUTO_SORT = "Auto Sort"
         private const val MENU_CREATE_FOLDER = "Create Folder"
         private const val MENU_EMPTY_ALL_FOLDERS = "Empty All Folders"
@@ -180,6 +181,7 @@ class AppsAdapter(
         return when (items[position]) {
             is ResolveInfo -> TYPE_APP
             is Folder -> TYPE_FOLDER
+            is GlobalActionItem -> TYPE_ACTION
             else -> throw IllegalArgumentException("Invalid type of item at position $position")
         }
     }
@@ -217,16 +219,9 @@ class AppsAdapter(
                 } else {
                     mainActivity.popupMenu?.menu?.add(MENU_CREATE_FOLDER)
                 }
-                mainActivity.popupMenu?.menu?.add(MENU_AUTO_SORT)
-                mainActivity.popupMenu?.menu?.add(MENU_EMPTY_ALL_FOLDERS)
                 mainActivity.popupMenu?.menu?.add(MENU_MORE_INFO)
                 mainActivity.popupMenu?.setOnMenuItemClickListener { menuItem ->
                     when (menuItem.title) {
-                        MENU_AUTO_SORT -> {
-                            mainActivity.autoSortApps()
-                            true
-                        }
-
                         MENU_CREATE_FOLDER -> {
                             val suggestedName = mainActivity.getFolderNameForApps(listOf(item.activityInfo.packageName))
                             val editText = EditText(mainActivity)
@@ -242,11 +237,6 @@ class AppsAdapter(
                                 }
                                 .setNegativeButton("Cancel", null)
                                 .show()
-                            true
-                        }
-
-                        MENU_EMPTY_ALL_FOLDERS -> {
-                            mainActivity.emptyAllFolders()
                             true
                         }
 
@@ -312,8 +302,6 @@ class AppsAdapter(
 
             mainActivity.popupMenu?.menu?.add(MENU_RENAME)
             mainActivity.popupMenu?.menu?.add(MENU_EMPTY_FOLDER)
-            mainActivity.popupMenu?.menu?.add(MENU_AUTO_SORT)
-            mainActivity.popupMenu?.menu?.add(MENU_EMPTY_ALL_FOLDERS)
             mainActivity.popupMenu?.setOnMenuItemClickListener { menuItem ->
                 when (menuItem.title) {
                     MENU_RENAME -> {
@@ -334,16 +322,6 @@ class AppsAdapter(
 
                     MENU_EMPTY_FOLDER -> {
                         mainActivity.emptyFolder(item)
-                        true
-                    }
-
-                    MENU_AUTO_SORT -> {
-                        mainActivity.autoSortApps()
-                        true
-                    }
-
-                    MENU_EMPTY_ALL_FOLDERS -> {
-                        mainActivity.emptyAllFolders()
                         true
                     }
 
@@ -371,6 +349,40 @@ class AppsAdapter(
         }
     }
 
+    inner class ActionViewHolder(itemView: View) : BaseViewHolder(itemView) {
+        val actionName: TextView = itemView.findViewById(R.id.action_name)
+
+        override fun handleItemClick() {
+            // Open the global actions menu
+            val popup = PopupMenu(itemView.context, itemView)
+            popup.menu.add(MENU_AUTO_SORT)
+            popup.menu.add(MENU_EMPTY_ALL_FOLDERS)
+            popup.setOnMenuItemClickListener { menuItem ->
+                when (menuItem.title) {
+                    MENU_AUTO_SORT -> {
+                        mainActivity.autoSortApps()
+                        true
+                    }
+                    MENU_EMPTY_ALL_FOLDERS -> {
+                        mainActivity.emptyAllFolders()
+                        true
+                    }
+                    else -> false
+                }
+            }
+            popup.show()
+        }
+
+        override fun createPopupMenu() {
+            // No long-press menu for the action item
+        }
+
+        override fun handleSpecificDrop(fromPosition: Int, toPosition: Int): Boolean {
+            // No drop handling for the action item
+            return false
+        }
+    }
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
         return when (viewType) {
             TYPE_APP -> {
@@ -380,6 +392,10 @@ class AppsAdapter(
             TYPE_FOLDER -> {
                 val view = LayoutInflater.from(parent.context).inflate(R.layout.folder_item, parent, false)
                 FolderViewHolder(view)
+            }
+            TYPE_ACTION -> {
+                val view = LayoutInflater.from(parent.context).inflate(R.layout.global_action_item, parent, false)
+                ActionViewHolder(view)
             }
             else -> throw IllegalArgumentException("Invalid view type: $viewType")
         }
@@ -408,6 +424,9 @@ class AppsAdapter(
                     }
                 }
                 holder.folderIcon.setIcons(folderIcons)
+            }
+            is ActionViewHolder -> {
+                holder.actionName.text = mainActivity.getString(R.string.actions_label)
             }
         }
     }

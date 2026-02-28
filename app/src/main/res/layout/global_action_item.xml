@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    style="@style/ListItemContainer">
+
+    <ImageView
+        android:id="@+id/action_icon"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:contentDescription="@string/actions_label"
+        android:src="@android:drawable/ic_menu_sort_by_size"
+        app:tint="@color/icon_tint_color"/>
+
+    <include
+        android:id="@+id/action_name"
+        layout="@layout/list_item_label" />
+
+</LinearLayout>

@@ -78,9 +78,11 @@ class MainActivity : AppCompatActivity() {
                         val position = recyclerView.getChildViewHolder(viewToDrag)?.bindingAdapterPosition
                         if (position != null) {
                             val item = items[position]
+
                             val mimeType = when (item) {
                                 is ResolveInfo -> "vnd.android.cursor.item/app"
                                 is Folder -> "vnd.android.cursor.item/folder"
+                                is GlobalActionItem -> "vnd.android.cursor.item/action"
                                 else -> ClipDescription.MIMETYPE_TEXT_PLAIN
                             }
 
@@ -138,7 +140,8 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val PREFS_NAME = "AppOrder"
-        private const val LAYOUT_KEY = "app_layout_v4" // Upgraded key for unified state
+        private const val LAYOUT_KEY = "app_layout_v5" // Upgraded key to include global action item
+        private const val ACTION_ITEM_KEY = "G:ACTION"
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -209,6 +212,7 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("NotifyDataSetChanged")
     internal fun autoSortApps() {
+        val actionItem = items.find { it is GlobalActionItem }
         val apps = getInstalledLauncherApps()
 
         val categoryGroups = apps.groupBy { app ->
@@ -216,6 +220,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         val newItems = mutableListOf<Any>()
+        if(actionItem != null) {
+            newItems.add(actionItem)
+        }
 
         categoryGroups.forEach { (category, groupApps) ->
             if (category != "Misc" && groupApps.size > 1) {
@@ -255,8 +262,10 @@ class MainActivity : AppCompatActivity() {
             // Update items list while maintaining existing items (folders and ordered apps)
             val currentPackages = mutableSetOf<String>()
             val newItems = mutableListOf<Any>()
+            val hasActionItem = items.any{ it is GlobalActionItem}
 
-            // First, keep existing folders and apps that are still installed
+
+            // First, keep existing items that are still installed
             for (item in items) {
                 if (item is Folder) {
                     item.apps.removeAll { !appMap.containsKey(it) }
@@ -270,14 +279,25 @@ class MainActivity : AppCompatActivity() {
                         newItems.add(appMap[pkg]!!)
                         currentPackages.add(pkg)
                     }
+                } else if (item is GlobalActionItem) {
+                    newItems.add(item)
                 }
+            }
+            if(!hasActionItem) {
+                 newItems.add(0, GlobalActionItem)
             }
 
             // Then, add any new apps that weren't in the list
             val newApps = apps.filter { !currentPackages.contains(it.activityInfo.packageName) }
             if (newApps.isNotEmpty()) {
+                // Find first non-folder, non-action item position to insert new apps
+                var insertIndex = newItems.indexOfFirst { it is ResolveInfo }
+                if (insertIndex == -1) { // If no apps, add at the end
+                    insertIndex = newItems.size
+                }
+
                 for (app in newApps) {
-                    val category = getAppCategory(app.activityInfo.packageName)
+                     val category = getAppCategory(app.activityInfo.packageName)
                     var addedToFolder = false
                     if (category != null) {
                         val targetFolder =
@@ -289,10 +309,10 @@ class MainActivity : AppCompatActivity() {
                     }
 
                     if (!addedToFolder) {
-                        newItems.add(app)
+                        newItems.add(insertIndex, app)
+                        insertIndex++
                     }
                 }
-                saveAppOrder()
             }
 
 
@@ -305,34 +325,50 @@ class MainActivity : AppCompatActivity() {
         } else {
             appsList.adapter?.notifyDataSetChanged()
         }
+        saveAppOrder()
     }
 
     private fun loadAppLayout(allApps: List<ResolveInfo>, appMap: Map<String, ResolveInfo>) {
         val layoutString = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(LAYOUT_KEY, null)
+        var actionItemLoaded = false
+
         if (layoutString == null) {
+            items.add(GlobalActionItem)
             items.addAll(allApps)
             return
         }
 
         val seenPackages = mutableSetOf<String>()
         layoutString.split("|").forEach { entry ->
-            if (entry.startsWith("F:")) {
-                val parts = entry.substring(2).split(":")
-                if (parts.size == 2) {
-                    val folderName = parts[0]
-                    val folderApps = parts[1].split(",").filter { appMap.containsKey(it) }.toMutableList()
-                    if (folderApps.isNotEmpty()) {
-                        items.add(Folder(folderName, folderApps))
-                        seenPackages.addAll(folderApps)
+            when {
+                entry.startsWith("F:") -> {
+                    val parts = entry.substring(2).split(":")
+                    if (parts.size >= 2) {
+                        val folderName = parts[0]
+                        val folderApps = parts[1].split(",").filter { appMap.containsKey(it) }.toMutableList()
+                        if (folderApps.isNotEmpty()) {
+                            items.add(Folder(folderName, folderApps))
+                            seenPackages.addAll(folderApps)
+                        }
                     }
                 }
-            } else if (entry.startsWith("A:")) {
-                val pkg = entry.substring(2)
-                if (appMap.containsKey(pkg)) {
-                    items.add(appMap[pkg]!!)
-                    seenPackages.add(pkg)
+                entry.startsWith("A:") -> {
+                    val pkg = entry.substring(2)
+                    if (appMap.containsKey(pkg)) {
+                        items.add(appMap[pkg]!!)
+                        seenPackages.add(pkg)
+                    }
+                }
+                entry == ACTION_ITEM_KEY -> {
+                    items.add(GlobalActionItem)
+                    actionItemLoaded = true
                 }
             }
+        }
+
+        // If the action item wasn't in the saved layout (e.g., old version), add it now.
+        if (!actionItemLoaded) {
+            items.add(0, GlobalActionItem)
         }
 
         allApps.forEach { if (!seenPackages.contains(it.activityInfo.packageName)) items.add(it) }
@@ -343,6 +379,7 @@ class MainActivity : AppCompatActivity() {
             when (item) {
                 is ResolveInfo -> "A:${item.activityInfo.packageName}"
                 is Folder -> "F:${item.name}:${item.apps.joinToString(",")}"
+                is GlobalActionItem -> ACTION_ITEM_KEY
                 else -> ""
             }
         }
@@ -390,7 +427,7 @@ class MainActivity : AppCompatActivity() {
         val appsFromFolder = folder.apps.mapNotNull { appMap[it] }
 
         items.removeAt(folderIndex)
-        items.addAll(appsFromFolder)
+        items.addAll(folderIndex, appsFromFolder) // Insert apps at the folder's previous position
 
         appsList.adapter?.notifyDataSetChanged()
 
@@ -399,7 +436,7 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("NotifyDataSetChanged")
     internal fun emptyAllFolders() {
-        val folders = items.filterIsInstance<Folder>()
+        val folders = items.filterIsInstance<Folder>().toList()
         if (folders.isEmpty()) {
             Toast.makeText(this, "No folders found to empty.", Toast.LENGTH_SHORT).show()
             return
@@ -409,13 +446,20 @@ class MainActivity : AppCompatActivity() {
         val allApps = packageManager.queryIntentActivities(mainIntent, 0)
         val appMap = allApps.associateBy { it.activityInfo.packageName }
 
-        val appsFromFolders = mutableListOf<ResolveInfo>()
-        folders.forEach { folder ->
-            appsFromFolders.addAll(folder.apps.mapNotNull { appMap[it] })
+        val newItems = items.toMutableList()
+        var appsAdded = 0
+        for (folder in folders) {
+            val folderIndex = newItems.indexOf(folder)
+            if (folderIndex != -1) {
+                val appsFromFolder = folder.apps.mapNotNull { appMap[it] }
+                newItems.removeAt(folderIndex)
+                newItems.addAll(folderIndex, appsFromFolder)
+                appsAdded += appsFromFolder.size
+            }
         }
 
-        items.removeAll(folders)
-        items.addAll(appsFromFolders)
+        items.clear()
+        items.addAll(newItems)
 
         appsList.adapter?.notifyDataSetChanged()
         saveAppOrder()
@@ -426,15 +470,19 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("NotifyDataSetChanged")
     internal fun removeAppFromFolder(app: ResolveInfo) {
         val folder = items.find { it is Folder && it.apps.contains(app.activityInfo.packageName) } as? Folder ?: return
+        val folderIndex = items.indexOf(folder)
 
         folder.apps.remove(app.activityInfo.packageName)
-        items.add(app)
+        // Add app back to the main list, right after the folder it came from
+        if (folderIndex != -1) {
+            items.add(folderIndex + 1, app)
+        } else {
+            items.add(app)
+        }
+
 
         if (folder.apps.isEmpty()) {
-            val folderIndex = items.indexOf(folder)
-            if (folderIndex != -1) {
-                items.removeAt(folderIndex)
-            }
+            items.remove(folder)
         }
         appsList.adapter?.notifyDataSetChanged()
         saveAppOrder()
