@@ -352,9 +352,7 @@ class AppsAdapter(
     inner class ActionViewHolder(itemView: View) : BaseViewHolder(itemView) {
         val actionName: TextView = itemView.findViewById(R.id.action_name)
 
-        override fun handleItemClick() {
-            // Open the global actions menu
-            val popup = PopupMenu(itemView.context, itemView)
+        private fun populateMenu(popup: PopupMenu) {
             popup.menu.add(MENU_AUTO_SORT)
             popup.menu.add(MENU_EMPTY_ALL_FOLDERS)
             popup.setOnMenuItemClickListener { menuItem ->
@@ -370,11 +368,17 @@ class AppsAdapter(
                     else -> false
                 }
             }
+        }
+
+        override fun handleItemClick() {
+            // Open the global actions menu
+            val popup = PopupMenu(itemView.context, itemView)
+            populateMenu(popup)
             popup.show()
         }
 
         override fun createPopupMenu() {
-            // No long-press menu for the action item
+            mainActivity.popupMenu?.let { populateMenu(it) }
         }
 
         override fun handleSpecificDrop(fromPosition: Int, toPosition: Int): Boolean {
