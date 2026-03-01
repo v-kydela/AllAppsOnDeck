@@ -30,6 +30,8 @@ class AppsAdapter(
         private const val MENU_RENAME = "Rename"
         private const val MENU_EMPTY_FOLDER = "Empty Folder"
         private const val MENU_REMOVE_FROM_FOLDER = "Remove from Folder"
+        private const val MENU_REFRESH = "Refresh"
+        private const val MENU_TEMP_HIDE = "Temporarily Hide"
     }
 
     abstract inner class BaseViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView), View.OnClickListener, View.OnLongClickListener, View.OnDragListener {
@@ -220,6 +222,7 @@ class AppsAdapter(
                     mainActivity.popupMenu?.menu?.add(MENU_CREATE_FOLDER)
                 }
                 mainActivity.popupMenu?.menu?.add(MENU_MORE_INFO)
+                //mainActivity.popupMenu?.menu?.add(MENU_TEMP_HIDE)
                 mainActivity.popupMenu?.setOnMenuItemClickListener { menuItem ->
                     when (menuItem.title) {
                         MENU_CREATE_FOLDER -> {
@@ -247,6 +250,12 @@ class AppsAdapter(
 
                         MENU_REMOVE_FROM_FOLDER -> {
                             mainActivity.removeAppFromFolder(item)
+                            true
+                        }
+
+                        MENU_TEMP_HIDE -> {
+                            items.removeAt(pos)
+                            notifyItemRemoved(pos)
                             true
                         }
 
@@ -355,6 +364,7 @@ class AppsAdapter(
         private fun populateMenu(popup: PopupMenu) {
             popup.menu.add(MENU_AUTO_SORT)
             popup.menu.add(MENU_EMPTY_ALL_FOLDERS)
+            popup.menu.add(MENU_REFRESH)
             popup.setOnMenuItemClickListener { menuItem ->
                 when (menuItem.title) {
                     MENU_AUTO_SORT -> {
@@ -363,6 +373,10 @@ class AppsAdapter(
                     }
                     MENU_EMPTY_ALL_FOLDERS -> {
                         mainActivity.emptyAllFolders()
+                        true
+                    }
+                    MENU_REFRESH -> {
+                        mainActivity.refreshApps()
                         true
                     }
                     else -> false
