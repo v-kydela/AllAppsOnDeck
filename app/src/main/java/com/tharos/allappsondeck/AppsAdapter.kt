@@ -26,7 +26,7 @@ class AppsAdapter(
         private const val MENU_AUTO_SORT = "Auto Sort"
         private const val MENU_CREATE_FOLDER = "Create Folder"
         private const val MENU_EMPTY_ALL_FOLDERS = "Empty All Folders"
-        private const val MENU_MORE_INFO = "More Info"
+        private const val MENU_APP_INFO = "App Info"
         private const val MENU_RENAME = "Rename"
         private const val MENU_EMPTY_FOLDER = "Empty Folder"
         private const val MENU_REMOVE_FROM_FOLDER = "Remove from Folder"
@@ -221,7 +221,7 @@ class AppsAdapter(
                 } else {
                     mainActivity.popupMenu?.menu?.add(MENU_CREATE_FOLDER)
                 }
-                mainActivity.popupMenu?.menu?.add(MENU_MORE_INFO)
+                mainActivity.popupMenu?.menu?.add(MENU_APP_INFO)
                 //mainActivity.popupMenu?.menu?.add(MENU_TEMP_HIDE)
                 mainActivity.popupMenu?.setOnMenuItemClickListener { menuItem ->
                     when (menuItem.title) {
@@ -243,7 +243,7 @@ class AppsAdapter(
                             true
                         }
 
-                        MENU_MORE_INFO -> {
+                        MENU_APP_INFO -> {
                             mainActivity.showAppDetails(item.activityInfo.packageName)
                             true
                         }
@@ -365,6 +365,7 @@ class AppsAdapter(
             popup.menu.add(MENU_AUTO_SORT)
             popup.menu.add(MENU_EMPTY_ALL_FOLDERS)
             popup.menu.add(MENU_REFRESH)
+            popup.menu.add(MENU_APP_INFO)
             popup.setOnMenuItemClickListener { menuItem ->
                 when (menuItem.title) {
                     MENU_AUTO_SORT -> {
@@ -377,6 +378,10 @@ class AppsAdapter(
                     }
                     MENU_REFRESH -> {
                         mainActivity.refreshApps()
+                        true
+                    }
+                    MENU_APP_INFO -> {
+                        mainActivity.showAppDetails(mainActivity.packageName)
                         true
                     }
                     else -> false
