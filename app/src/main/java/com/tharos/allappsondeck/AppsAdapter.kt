@@ -2,6 +2,7 @@ package com.tharos.allappsondeck
 
 import android.app.AlertDialog
 import android.content.pm.ResolveInfo
+import android.graphics.drawable.LayerDrawable
 import android.view.DragEvent
 import android.view.LayoutInflater
 import android.view.View
@@ -39,6 +40,31 @@ class AppsAdapter(
             itemView.setOnClickListener(this)
             itemView.setOnLongClickListener(this)
             itemView.setOnDragListener(this)
+            clearDropIndicators(itemView)
+        }
+
+        private fun updateDropIndicators(v: View, event: DragEvent, canDropInMiddle: Boolean) {
+            val foreground = v.foreground?.mutate() as? LayerDrawable ?: return
+            val dropX = event.x
+            val viewWidth = v.width
+            val oneThird = viewWidth / 3
+
+            val showLeft = dropX <= oneThird
+            val showRight = dropX >= viewWidth - oneThird
+            val showOn = canDropInMiddle && !showLeft && !showRight
+
+            foreground.findDrawableByLayerId(R.id.indicator_left).alpha = if (showLeft) 255 else 0
+            foreground.findDrawableByLayerId(R.id.indicator_right).alpha = if (showRight) 255 else 0
+            
+            // Restore the original alpha behavior for "drop-on"
+            v.alpha = if (showOn) 0.5f else 1.0f
+        }
+
+        private fun clearDropIndicators(v: View) {
+            v.alpha = 1.0f
+            val foreground = v.foreground?.mutate() as? LayerDrawable ?: return
+            foreground.findDrawableByLayerId(R.id.indicator_left).alpha = 0
+            foreground.findDrawableByLayerId(R.id.indicator_right).alpha = 0
         }
 
         override fun onClick(v: View?) {
@@ -93,34 +119,19 @@ class AppsAdapter(
                     return true
                 }
                 DragEvent.ACTION_DRAG_ENTERED -> {
-                    // Determine highlight based on drop location within the view
-                    val dropX = event.x
-                    val viewWidth = v.width
-                    val oneThird = viewWidth / 3
-
-                    // Highlight only if dropping in the middle (folder zone)
-                    if (canDropInMiddle && dropX > oneThird && dropX < viewWidth - oneThird) {
-                        v.alpha = 0.5f
-                    }
+                    updateDropIndicators(v, event, canDropInMiddle)
                     return true
                 }
                 DragEvent.ACTION_DRAG_LOCATION -> {
-                    // Continuously update highlight based on location
-                    v.alpha = 1f // Reset first
-                    val dropX = event.x
-                    val viewWidth = v.width
-                    val oneThird = viewWidth / 3
-                    if (canDropInMiddle && dropX > oneThird && dropX < viewWidth - oneThird) {
-                        v.alpha = 0.5f
-                    }
+                    updateDropIndicators(v, event, canDropInMiddle)
                     return true
                 }
                 DragEvent.ACTION_DRAG_EXITED -> {
-                    v.alpha = 1f
+                    clearDropIndicators(v)
                     return true
                 }
                 DragEvent.ACTION_DROP -> {
-                    v.alpha = 1f
+                    clearDropIndicators(v)
                     // Get fromPosition ONLY on drop. This is the crucial fix.
                     val fromPosition = event.clipData?.getItemAt(0)?.text?.toString()?.toIntOrNull() ?: return false
 
@@ -164,12 +175,9 @@ class AppsAdapter(
                     return true
                 }
                 DragEvent.ACTION_DRAG_ENDED -> {
-                    v.alpha = 1f
+                    clearDropIndicators(v)
                     mainActivity.isDragging = false // Unset dragging flag
                     mainActivity.longPressedView = null // Clear reference
-                    // Also ensure any lingering alpha from a canceled drag is reset
-                    (v.parent as? RecyclerView)
-                        ?.findViewHolderForAdapterPosition(toPosition)?.itemView?.alpha = 1f
                     return true
                 }
                 else -> return false

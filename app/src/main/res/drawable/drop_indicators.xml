@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Left insertion caret -->
+    <item
+        android:id="@+id/indicator_left"
+        android:gravity="start">
+        <shape android:shape="rectangle">
+            <size android:width="4dp" />
+            <solid android:color="@color/drop_target_highlight" />
+        </shape>
+    </item>
+
+    <!-- Right insertion caret -->
+    <item
+        android:id="@+id/indicator_right"
+        android:gravity="end">
+        <shape android:shape="rectangle">
+            <size android:width="4dp" />
+            <solid android:color="@color/drop_target_highlight" />
+        </shape>
+    </item>
+</layer-list>
