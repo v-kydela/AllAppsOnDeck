@@ -5,6 +5,5 @@
         <item name="android:gravity">center_horizontal</item>
         <item name="android:orientation">vertical</item>
         <item name="android:padding">8dp</item>
-        <item name="android:foreground">@drawable/drop_indicators</item>
     </style>
 </resources>

@@ -2,7 +2,6 @@ package com.tharos.allappsondeck
 
 import android.app.AlertDialog
 import android.content.pm.ResolveInfo
-import android.graphics.drawable.LayerDrawable
 import android.view.DragEvent
 import android.view.LayoutInflater
 import android.view.View
@@ -32,6 +31,7 @@ class AppsAdapter(
         private const val MENU_EMPTY_FOLDER = "Empty Folder"
         private const val MENU_REMOVE_FROM_FOLDER = "Remove from Folder"
         private const val MENU_REFRESH = "Refresh"
+        @Suppress("unused")
         private const val MENU_TEMP_HIDE = "Temporarily Hide"
     }
 
@@ -40,31 +40,66 @@ class AppsAdapter(
             itemView.setOnClickListener(this)
             itemView.setOnLongClickListener(this)
             itemView.setOnDragListener(this)
-            clearDropIndicators(itemView)
         }
 
-        private fun updateDropIndicators(v: View, event: DragEvent, canDropInMiddle: Boolean) {
-            val foreground = v.foreground?.mutate() as? LayerDrawable ?: return
+        private fun updateDropCaret(v: View, event: DragEvent, canDropInMiddle: Boolean) {
+            val recyclerView = v.parent as? RecyclerView ?: return
+            val caret = (recyclerView.parent as? ViewGroup)?.findViewById<View>(R.id.drop_caret) ?: return
+            
+            val fromPosition = (event.localState as? View)?.let { 
+                recyclerView.getChildViewHolder(it)?.bindingAdapterPosition 
+            } ?: -1
+            
+            val toPosition = bindingAdapterPosition
+            if (toPosition == RecyclerView.NO_POSITION) {
+                caret.visibility = View.INVISIBLE
+                return
+            }
+
             val dropX = event.x
             val viewWidth = v.width
             val oneThird = viewWidth / 3
 
-            val showLeft = dropX <= oneThird
-            val showRight = dropX >= viewWidth - oneThird
-            val showOn = canDropInMiddle && !showLeft && !showRight
+            val isLeft = dropX <= oneThird
+            val isRight = dropX >= viewWidth - oneThird
+            val isMiddle = canDropInMiddle && !isLeft && !isRight
 
-            foreground.findDrawableByLayerId(R.id.indicator_left).alpha = if (showLeft) 255 else 0
-            foreground.findDrawableByLayerId(R.id.indicator_right).alpha = if (showRight) 255 else 0
-            
-            // Restore the original alpha behavior for "drop-on"
-            v.alpha = if (showOn) 0.5f else 1.0f
+            v.alpha = if (isMiddle) 0.5f else 1.0f
+
+            if (isLeft || isRight) {
+                val dropTargetPos = if (isLeft) toPosition else toPosition + 1
+                val wouldActuallyMoveTo = if (fromPosition != -1 && fromPosition < dropTargetPos) dropTargetPos - 1 else dropTargetPos
+
+                if (fromPosition != -1 && wouldActuallyMoveTo == fromPosition) {
+                    caret.visibility = View.INVISIBLE
+                } else {
+                    val caretWidthPx = 4 * v.context.resources.displayMetrics.density
+                    
+                    // Simple sibling math: RecyclerView's relative pos + Item's relative pos
+                    // This works perfectly because caret is a sibling of RecyclerView
+                    val targetX = (if (isLeft) v.left else v.right).toFloat() + recyclerView.left
+                    val targetY = v.top.toFloat() + recyclerView.top
+
+                    caret.x = targetX - (caretWidthPx / 2f)
+                    caret.y = targetY
+                    
+                    if (caret.layoutParams.height != v.height) {
+                        caret.layoutParams.height = v.height
+                        caret.requestLayout()
+                    }
+                    
+                    caret.visibility = View.VISIBLE
+                }
+            } else {
+                caret.visibility = View.INVISIBLE
+            }
         }
 
-        private fun clearDropIndicators(v: View) {
+        private fun hideDropCaret(v: View) {
             v.alpha = 1.0f
-            val foreground = v.foreground?.mutate() as? LayerDrawable ?: return
-            foreground.findDrawableByLayerId(R.id.indicator_left).alpha = 0
-            foreground.findDrawableByLayerId(R.id.indicator_right).alpha = 0
+            val recyclerView = v.parent as? RecyclerView ?: return
+            val caret = (recyclerView.parent as? ViewGroup)?.findViewById<View>(R.id.drop_caret)
+            caret?.visibility = View.INVISIBLE
         }
 
         override fun onClick(v: View?) {
@@ -115,25 +150,36 @@ class AppsAdapter(
             when (event.action) {
                 DragEvent.ACTION_DRAG_STARTED -> {
                     mainActivity.popupMenu?.dismiss()
-                    mainActivity.isDragging = true // Set dragging flag
+                    mainActivity.isDragging = true
+                    
+                    // Prime the caret height before the user moves their finger
+                    val recyclerView = v.parent as? RecyclerView
+                    if (recyclerView != null) {
+                        val caret = (recyclerView.parent as? ViewGroup)?.findViewById<View>(R.id.drop_caret)
+                        if (caret != null && caret.layoutParams.height != v.height) {
+                            caret.layoutParams.height = v.height
+                            caret.requestLayout()
+                        }
+                    }
                     return true
                 }
                 DragEvent.ACTION_DRAG_ENTERED -> {
-                    updateDropIndicators(v, event, canDropInMiddle)
+                    updateDropCaret(v, event, canDropInMiddle)
                     return true
                 }
                 DragEvent.ACTION_DRAG_LOCATION -> {
-                    updateDropIndicators(v, event, canDropInMiddle)
+                    updateDropCaret(v, event, canDropInMiddle)
                     return true
                 }
                 DragEvent.ACTION_DRAG_EXITED -> {
-                    clearDropIndicators(v)
+                    hideDropCaret(v)
                     return true
                 }
                 DragEvent.ACTION_DROP -> {
-                    clearDropIndicators(v)
-                    // Get fromPosition ONLY on drop. This is the crucial fix.
-                    val fromPosition = event.clipData?.getItemAt(0)?.text?.toString()?.toIntOrNull() ?: return false
+                    hideDropCaret(v)
+                    val fromPosition = (event.localState as? View)?.let { 
+                        (v.parent as? RecyclerView)?.getChildViewHolder(it)?.bindingAdapterPosition 
+                    } ?: return false
 
                     if (toPosition == fromPosition) return true
 
@@ -142,9 +188,7 @@ class AppsAdapter(
                     val oneThird = viewWidth / 3
 
                     when {
-                        // Drop on left third
                         dropX <= oneThird -> {
-                            // Reorder BEFORE
                             val movedItem = items.removeAt(fromPosition)
                             val finalPosition = if (fromPosition < toPosition) toPosition - 1 else toPosition
                             if (finalPosition <= items.size) {
@@ -153,9 +197,7 @@ class AppsAdapter(
                             }
                             mainActivity.saveAppOrder()
                         }
-                        // Drop on right third
                         dropX >= viewWidth - oneThird -> {
-                            // Reorder AFTER
                             val movedItem = items.removeAt(fromPosition)
                             val targetPos = toPosition + 1
                             val finalPosition = if (fromPosition < targetPos) targetPos - 1 else targetPos
@@ -165,7 +207,6 @@ class AppsAdapter(
                             }
                             mainActivity.saveAppOrder()
                         }
-                        // Drop in the middle
                         else -> {
                             if(canDropInMiddle) {
                                 handleSpecificDrop(fromPosition, toPosition)
@@ -175,9 +216,9 @@ class AppsAdapter(
                     return true
                 }
                 DragEvent.ACTION_DRAG_ENDED -> {
-                    clearDropIndicators(v)
-                    mainActivity.isDragging = false // Unset dragging flag
-                    mainActivity.longPressedView = null // Clear reference
+                    hideDropCaret(v)
+                    mainActivity.isDragging = false
+                    mainActivity.longPressedView = null
                     return true
                 }
                 else -> return false
@@ -230,7 +271,6 @@ class AppsAdapter(
                     mainActivity.popupMenu?.menu?.add(MENU_CREATE_FOLDER)
                 }
                 mainActivity.popupMenu?.menu?.add(MENU_APP_INFO)
-                //mainActivity.popupMenu?.menu?.add(MENU_TEMP_HIDE)
                 mainActivity.popupMenu?.setOnMenuItemClickListener { menuItem ->
                     when (menuItem.title) {
                         MENU_CREATE_FOLDER -> {
@@ -250,23 +290,14 @@ class AppsAdapter(
                                 .show()
                             true
                         }
-
                         MENU_APP_INFO -> {
                             mainActivity.showAppDetails(item.activityInfo.packageName)
                             true
                         }
-
                         MENU_REMOVE_FROM_FOLDER -> {
                             mainActivity.removeAppFromFolder(item)
                             true
                         }
-
-                        MENU_TEMP_HIDE -> {
-                            items.removeAt(pos)
-                            notifyItemRemoved(pos)
-                            true
-                        }
-
                         else -> false
                     }
                 }
@@ -278,7 +309,6 @@ class AppsAdapter(
             val toItem = items[toPosition]
 
             if (fromItem is ResolveInfo && toItem is ResolveInfo) {
-                // Create a new folder
                 val folderApps = mutableListOf(toItem.activityInfo.packageName, fromItem.activityInfo.packageName)
                 val suggestedName = mainActivity.getFolderNameForApps(folderApps)
                 val newFolder = Folder(suggestedName, folderApps)
@@ -336,12 +366,10 @@ class AppsAdapter(
                             .show()
                         true
                     }
-
                     MENU_EMPTY_FOLDER -> {
                         mainActivity.emptyFolder(item)
                         true
                     }
-
                     else -> false
                 }
             }
@@ -352,7 +380,6 @@ class AppsAdapter(
             val toItem = items[toPosition]
 
             if (fromItem is ResolveInfo && toItem is Folder) {
-                // Add app to existing folder
                 toItem.apps.add(fromItem.activityInfo.packageName)
                 items.removeAt(fromPosition)
 
@@ -398,7 +425,6 @@ class AppsAdapter(
         }
 
         override fun handleItemClick() {
-            // Open the global actions menu
             val popup = PopupMenu(itemView.context, itemView)
             populateMenu(popup)
             popup.show()
@@ -409,7 +435,6 @@ class AppsAdapter(
         }
 
         override fun handleSpecificDrop(fromPosition: Int, toPosition: Int): Boolean {
-            // No drop handling for the action item
             return false
         }
     }
@@ -445,8 +470,6 @@ class AppsAdapter(
             is FolderViewHolder -> {
                 val folder = items[position] as Folder
                 holder.folderName.text = folder.name
-
-                // Fetch icons for the apps in the folder
                 val folderIcons = folder.apps.take(4).mapNotNull { packageName ->
                     try {
                         mainActivity.packageManager.getApplicationIcon(packageName)
