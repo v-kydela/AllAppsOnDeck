@@ -1,5 +1,6 @@
 package com.tharos.allappsondeck
 
+import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.content.pm.ResolveInfo
 import android.view.DragEvent
@@ -33,6 +34,13 @@ class AppsAdapter(
         private const val MENU_REFRESH = "Refresh"
         @Suppress("unused")
         private const val MENU_TEMP_HIDE = "Temporarily Hide"
+    }
+
+    @SuppressLint("NotifyDataSetChanged")
+    fun updateItems(newItems: List<Any>) {
+        items.clear()
+        items.addAll(newItems)
+        notifyDataSetChanged()
     }
 
     abstract inner class BaseViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView), View.OnClickListener, View.OnLongClickListener, View.OnDragListener {

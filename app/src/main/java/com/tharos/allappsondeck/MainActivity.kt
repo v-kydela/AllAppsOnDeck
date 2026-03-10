@@ -43,12 +43,16 @@ class MainActivity : AppCompatActivity() {
     private var startY = 0f
     var longPressedView: View? = null
 
+    private var activeFolder: Folder? = null
+    private var activeFolderAdapter: AppsAdapter? = null
+    private var activeFolderDialog: AlertDialog? = null
+
     @SuppressLint("ClickableViewAccessibility")
-    val appTouchListener = View.OnTouchListener { v, event ->        // This is a simple click-detection mechanism.
+    val appTouchListener = View.OnTouchListener { v, event ->
+        // This is a simple click-detection mechanism.
         // We need this to manually call performClick() for accessibility.
-        val isClick = (event.action == MotionEvent.ACTION_UP &&
-                !isDragging &&
-                (event.eventTime - event.downTime) < android.view.ViewConfiguration.getTapTimeout())
+        val isClick =
+            (event.action == MotionEvent.ACTION_UP && !isDragging && (event.eventTime - event.downTime) < android.view.ViewConfiguration.getTapTimeout())
 
         // If a click is detected, perform the click and stop processing this touch event.
         if (isClick) {
@@ -67,6 +71,7 @@ class MainActivity : AppCompatActivity() {
                 // Return false so that onLongClick can still be triggered.
                 false
             }
+
             MotionEvent.ACTION_MOVE -> {
                 val viewToDrag = longPressedView
                 // Check if a long press has occurred and we are not already dragging
@@ -75,7 +80,8 @@ class MainActivity : AppCompatActivity() {
                     // Check if the finger has moved far enough to be considered a drag
                     if (abs(event.x - startX) > touchSlop || abs(event.y - startY) > touchSlop) {
                         popupMenu?.dismiss() // Dismiss the menu
-                        val position = recyclerView.getChildViewHolder(viewToDrag)?.bindingAdapterPosition
+                        val position =
+                            recyclerView.getChildViewHolder(viewToDrag)?.bindingAdapterPosition
                         if (position != null) {
                             val item = items[position]
 
@@ -93,7 +99,9 @@ class MainActivity : AppCompatActivity() {
 
                             // Pass the local reference 'viewToDrag' as the local state.
                             // This object will not be nulled out during the drag operation.
-                            recyclerView.startDragAndDrop(clipData, dragShadowBuilder, viewToDrag, 0)
+                            recyclerView.startDragAndDrop(
+                                clipData, dragShadowBuilder, viewToDrag, 0
+                            )
 
                             // Hide the original view to prevent the "duplicate" effect.
                             viewToDrag.visibility = View.INVISIBLE
@@ -105,12 +113,14 @@ class MainActivity : AppCompatActivity() {
                 // If dragging, consume the event
                 isDragging
             }
+
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 // This block now only runs if the gesture ended but wasn't a click (e.g., a long-press without a drag).
                 longPressedView = null
                 isDragging = false
                 false // Allow other events to process if needed
             }
+
             else -> false
         }
     }
@@ -133,10 +143,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private val settingsResultLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        // App settings screen closed, refresh the list
-        refreshApps()
-    }
+    private val settingsResultLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            // App settings screen closed, refresh the list
+            refreshApps()
+        }
 
     companion object {
         private const val PREFS_NAME = "AppOrder"
@@ -163,7 +174,9 @@ class MainActivity : AppCompatActivity() {
         refreshApps()
 
         val intentFilter = IntentFilter("com.tharos.allappsondeck.REFRESH_APPS")
-        ContextCompat.registerReceiver(this, refreshReceiver, intentFilter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        ContextCompat.registerReceiver(
+            this, refreshReceiver, intentFilter, ContextCompat.RECEIVER_NOT_EXPORTED
+        )
         appsList.setOnTouchListener(appTouchListener)
         appsList.setOnDragListener(appDragListener)
     }
@@ -208,7 +221,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Otherwise, find the most frequent category
-        return categories.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key ?: "New Folder"
+        return categories.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
+            ?: "New Folder"
     }
 
     @SuppressLint("NotifyDataSetChanged")
@@ -221,7 +235,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val newItems = mutableListOf<Any>()
-        if(actionItem != null) {
+        if (actionItem != null) {
             newItems.add(actionItem)
         }
 
@@ -248,7 +262,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun getInstalledLauncherApps(): List<ResolveInfo> {
         val mainIntent = Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER)
-        return packageManager.queryIntentActivities(mainIntent, 0).filter { it.activityInfo.packageName != packageName }
+        return packageManager.queryIntentActivities(mainIntent, 0)
+            .filter { it.activityInfo.packageName != packageName }
     }
 
     @SuppressLint("NotifyDataSetChanged")
@@ -263,8 +278,7 @@ class MainActivity : AppCompatActivity() {
             // Update items list while maintaining existing items (folders and ordered apps)
             val currentPackages = mutableSetOf<String>()
             val newItems = mutableListOf<Any>()
-            val hasActionItem = items.any{ it is GlobalActionItem}
-
+            val hasActionItem = items.any { it is GlobalActionItem }
 
             // First, keep existing items that are still installed
             for (item in items) {
@@ -284,8 +298,8 @@ class MainActivity : AppCompatActivity() {
                     newItems.add(item)
                 }
             }
-            if(!hasActionItem) {
-                 newItems.add(0, GlobalActionItem)
+            if (!hasActionItem) {
+                newItems.add(0, GlobalActionItem)
             }
 
             // Then, add any new apps that weren't in the list
@@ -298,11 +312,14 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 for (app in newApps) {
-                     val category = getAppCategory(app.activityInfo.packageName)
+                    val category = getAppCategory(app.activityInfo.packageName)
                     var addedToFolder = false
                     if (category != null) {
-                        val targetFolder =
-                            newItems.find { it is Folder && it.name.equals(category, ignoreCase = true) } as? Folder
+                        val targetFolder = newItems.find {
+                            it is Folder && it.name.equals(
+                                category, ignoreCase = true
+                            )
+                        } as? Folder
                         if (targetFolder != null) {
                             targetFolder.apps.add(app.activityInfo.packageName)
                             addedToFolder = true
@@ -316,7 +333,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-
             items.clear()
             items.addAll(newItems)
         }
@@ -326,11 +342,23 @@ class MainActivity : AppCompatActivity() {
         } else {
             appsList.adapter?.notifyDataSetChanged()
         }
+
+        // Update active folder if it exists
+        activeFolder?.let { folder ->
+            val folderAppsResolved =
+                apps.filter { app -> folder.apps.contains(app.activityInfo.packageName) }
+            activeFolderAdapter?.updateItems(ArrayList(folderAppsResolved))
+            if (folder.apps.isEmpty()) {
+                activeFolderDialog?.dismiss()
+            }
+        }
+
         saveAppOrder()
     }
 
     private fun loadAppLayout(allApps: List<ResolveInfo>, appMap: Map<String, ResolveInfo>) {
-        val layoutString = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(LAYOUT_KEY, null)
+        val layoutString =
+            getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(LAYOUT_KEY, null)
         var actionItemLoaded = false
 
         if (layoutString == null) {
@@ -346,13 +374,15 @@ class MainActivity : AppCompatActivity() {
                     val parts = entry.substring(2).split(":")
                     if (parts.size >= 2) {
                         val folderName = parts[0]
-                        val folderApps = parts[1].split(",").filter { appMap.containsKey(it) }.toMutableList()
+                        val folderApps =
+                            parts[1].split(",").filter { appMap.containsKey(it) }.toMutableList()
                         if (folderApps.isNotEmpty()) {
                             items.add(Folder(folderName, folderApps))
                             seenPackages.addAll(folderApps)
                         }
                     }
                 }
+
                 entry.startsWith("A:") -> {
                     val pkg = entry.substring(2)
                     if (appMap.containsKey(pkg)) {
@@ -360,6 +390,7 @@ class MainActivity : AppCompatActivity() {
                         seenPackages.add(pkg)
                     }
                 }
+
                 entry == ACTION_ITEM_KEY -> {
                     items.add(GlobalActionItem)
                     actionItemLoaded = true
@@ -396,20 +427,27 @@ class MainActivity : AppCompatActivity() {
         folderTitle.text = folder.name
         folderAppsList.layoutManager = GridLayoutManager(this, 4)
 
-        val dialog = AlertDialog.Builder(this)
-            .setView(dialogView)
-            .create()
+        val dialog = AlertDialog.Builder(this).setView(dialogView).create()
 
         val mainIntent = Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER)
         val allApps = packageManager.queryIntentActivities(mainIntent, 0)
-        val folderAppsResolved = allApps.filter { app -> folder.apps.contains(app.activityInfo.packageName) }.toMutableList()
+        val folderAppsResolved =
+            allApps.filter { app -> folder.apps.contains(app.activityInfo.packageName) }
+                .toMutableList()
 
         val adapter = AppsAdapter(this, ArrayList(folderAppsResolved), true)
         folderAppsList.adapter = adapter
         folderAppsList.setOnTouchListener(appTouchListener)
         folderAppsList.setOnDragListener(appDragListener)
 
+        activeFolder = folder
+        activeFolderAdapter = adapter
+        activeFolderDialog = dialog
+
         dialog.setOnDismissListener {
+            activeFolder = null
+            activeFolderAdapter = null
+            activeFolderDialog = null
             refreshApps()
         }
 
@@ -431,6 +469,10 @@ class MainActivity : AppCompatActivity() {
         items.addAll(folderIndex, appsFromFolder) // Insert apps at the folder's previous position
 
         appsList.adapter?.notifyDataSetChanged()
+
+        if (activeFolder == folder) {
+            activeFolderDialog?.dismiss()
+        }
 
         saveAppOrder()
     }
@@ -463,6 +505,14 @@ class MainActivity : AppCompatActivity() {
         items.addAll(newItems)
 
         appsList.adapter?.notifyDataSetChanged()
+
+        // If an active folder was emptied as part of this, dismiss it
+        activeFolder?.let { folder ->
+            if (folder.apps.isEmpty() || !items.contains(folder)) {
+                activeFolderDialog?.dismiss()
+            }
+        }
+
         saveAppOrder()
 
         Toast.makeText(this, "All folders have been emptied.", Toast.LENGTH_SHORT).show()
@@ -470,7 +520,9 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("NotifyDataSetChanged")
     internal fun removeAppFromFolder(app: ResolveInfo) {
-        val folder = items.find { it is Folder && it.apps.contains(app.activityInfo.packageName) } as? Folder ?: return
+        val folder =
+            items.find { it is Folder && it.apps.contains(app.activityInfo.packageName) } as? Folder
+                ?: return
         val folderIndex = items.indexOf(folder)
 
         folder.apps.remove(app.activityInfo.packageName)
@@ -481,10 +533,18 @@ class MainActivity : AppCompatActivity() {
             items.add(app)
         }
 
-
         if (folder.apps.isEmpty()) {
             items.remove(folder)
+            if (activeFolder == folder) {
+                activeFolderDialog?.dismiss()
+            }
+        } else if (activeFolder == folder) {
+            val apps = getInstalledLauncherApps()
+            val folderAppsResolved =
+                apps.filter { folder.apps.contains(it.activityInfo.packageName) }
+            activeFolderAdapter?.updateItems(ArrayList(folderAppsResolved))
         }
+
         appsList.adapter?.notifyDataSetChanged()
         saveAppOrder()
     }
