@@ -184,7 +184,9 @@ class MainActivity : AppCompatActivity() {
     fun showAppDetails(packageName: String) {
         val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
         intent.data = "package:$packageName".toUri()
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        // FLAG_ACTIVITY_NEW_TASK makes it show as "Settings" in recents
+        // FLAG_ACTIVITY_CLEAR_TASK prevents multiple app info screens from stacking
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
         settingsResultLauncher.launch(intent)
     }
 
