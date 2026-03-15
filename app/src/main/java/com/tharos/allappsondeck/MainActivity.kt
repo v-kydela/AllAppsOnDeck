@@ -203,6 +203,7 @@ class MainActivity : AppCompatActivity() {
                     ApplicationInfo.CATEGORY_NEWS -> "News"
                     ApplicationInfo.CATEGORY_MAPS -> "Maps"
                     ApplicationInfo.CATEGORY_PRODUCTIVITY -> "Productivity"
+                    ApplicationInfo.CATEGORY_ACCESSIBILITY -> "Accessibility"
                     else -> null
                 }
             } else null
