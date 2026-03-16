@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.os.Build
 import android.os.Bundle
@@ -190,11 +191,15 @@ class MainActivity : AppCompatActivity() {
         settingsResultLauncher.launch(intent)
     }
 
-    private fun getAppCategory(packageName: String): String? {
-        return try {
+    private fun getAppCategories(packageName: String): List<String> {
+        val categories = mutableListOf<String>()
+        try {
             val appInfo = packageManager.getApplicationInfo(packageName, 0)
+            val label = appInfo.loadLabel(packageManager).toString().lowercase()
+
+            // 1. Built-in Category
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                when (appInfo.category) {
+                val builtin = when (appInfo.category) {
                     ApplicationInfo.CATEGORY_GAME -> "Games"
                     ApplicationInfo.CATEGORY_AUDIO -> "Audio"
                     ApplicationInfo.CATEGORY_VIDEO -> "Video"
@@ -206,26 +211,55 @@ class MainActivity : AppCompatActivity() {
                     ApplicationInfo.CATEGORY_ACCESSIBILITY -> "Accessibility"
                     else -> null
                 }
-            } else null
+                builtin?.let { categories.add(it) }
+            }
+
+            // 2. Intent-Based Categorization
+            if (isAppForIntent(packageName, Intent(Intent.ACTION_VIEW, "mailto:".toUri()))) categories.add("Communication")
+            if (isAppForIntent(packageName, Intent(Intent.ACTION_VIEW, "tel:".toUri()))) categories.add("Communication")
+            if (isAppForIntent(packageName, Intent(Intent.ACTION_VIEW, "http://google.com".toUri()).addCategory(Intent.CATEGORY_BROWSABLE))) categories.add("Browsers")
+
+            // 3. Keyword-Based Heuristics
+            if (label.containsAny("bank", "pay", "wallet", "finance", "credit", "crypto", "invest")) categories.add("Finance")
+            if (label.containsAny("flight", "airline", "hotel", "booking", "travel", "expedia", "airbnb")) categories.add("Travel")
+            if (label.containsAny("taxi", "ride", "uber", "lyft", "grab", "transit", "train", "bus")) categories.add("Transit")
+            if (label.containsAny("shop", "store", "market", "amazon", "ebay", "walmart", "target", "shopping")) categories.add("Shopping")
+            if (label.containsAny("chat", "msg", "messenger", "whatsapp", "signal", "telegram")) categories.add("Communication")
+            if (label.containsAny("mail", "outlook", "gmail")) categories.add("Communication")
+            if (label.containsAny("office", "doc", "sheet", "slide", "pdf", "note", "keep")) categories.add("Productivity")
+
+            // 4. Publisher Check
+            if (packageName.startsWith("com.google.android") || packageName.startsWith("com.google.android.apps")) categories.add("Google")
+            if (packageName.startsWith("com.microsoft.")) categories.add("Microsoft")
+            if (packageName.startsWith("com.sec.android") || packageName.startsWith("com.samsung.")) categories.add("Samsung")
+
         } catch (_: Exception) {
-            null
+            // App might have been uninstalled
         }
+        return categories.distinct()
+    }
+
+    private fun String.containsAny(vararg keywords: String): Boolean {
+        return keywords.any { this.contains(it, ignoreCase = true) }
+    }
+
+    private fun isAppForIntent(packageName: String, intent: Intent): Boolean {
+        val resolveInfos = packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
+        return resolveInfos.any { it.activityInfo.packageName == packageName }
     }
 
     internal fun getFolderNameForApps(packageNames: List<String>): String {
-        val categories = packageNames.mapNotNull { getAppCategory(it) }
-
-        if (categories.isEmpty()) return "New Folder"
-
-        // If all apps share a category, use it
-        val firstCategory = categories.first()
-        if (categories.all { it == firstCategory }) {
-            return firstCategory
+        val categoryCounts = mutableMapOf<String, Int>()
+        packageNames.forEach { pkg ->
+            getAppCategories(pkg).forEach { cat ->
+                categoryCounts[cat] = (categoryCounts[cat] ?: 0) + 1
+            }
         }
 
-        // Otherwise, find the most frequent category
-        return categories.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
-            ?: "New Folder"
+        if (categoryCounts.isEmpty()) return "New Folder"
+
+        // Find the category that appears in the most apps in this set
+        return categoryCounts.maxByOrNull { it.value }?.key ?: "New Folder"
     }
 
     @SuppressLint("NotifyDataSetChanged")
@@ -233,23 +267,52 @@ class MainActivity : AppCompatActivity() {
         val actionItem = items.find { it is GlobalActionItem }
         val apps = getInstalledLauncherApps()
 
-        val categoryGroups = apps.groupBy { app ->
-            getAppCategory(app.activityInfo.packageName) ?: "Misc"
+        // 1. Get all categories for all apps
+        val appToCategories = apps.associateWith { getAppCategories(it.activityInfo.packageName) }
+
+        // 2. Count potential members for each category
+        val potentialCounts = mutableMapOf<String, Int>()
+        appToCategories.values.flatten().forEach {
+            potentialCounts[it] = (potentialCounts[it] ?: 0) + 1
         }
 
+        // 3. Keep only categories that have at least 2 potential members
+        val validCategories = potentialCounts.filter { it.value > 1 }.keys
+
+        // 4. Assign apps to folders greedily to balance sizes
+        val assignments = mutableMapOf<String, MutableList<ResolveInfo>>()
+        val unassignedApps = mutableListOf<ResolveInfo>()
+
+        for (app in apps) {
+            val appCats = appToCategories[app]?.filter { it in validCategories } ?: emptyList()
+            if (appCats.isEmpty()) {
+                unassignedApps.add(app)
+            } else {
+                // Pick the category with the current SMALLEST assignment count for evenness
+                val bestCat = appCats.minByOrNull { assignments[it]?.size ?: 0 }!!
+                assignments.getOrPut(bestCat) { mutableListOf() }.add(app)
+            }
+        }
+
+        // 5. Build new items list
         val newItems = mutableListOf<Any>()
         if (actionItem != null) {
             newItems.add(actionItem)
         }
 
-        categoryGroups.forEach { (category, groupApps) ->
-            if (category != "Misc" && groupApps.size > 1) {
+        // Add folders
+        assignments.forEach { (category, groupApps) ->
+            if (groupApps.size > 1) {
                 val packageNames = groupApps.map { it.activityInfo.packageName }.toMutableList()
                 newItems.add(Folder(category, packageNames))
             } else {
-                newItems.addAll(groupApps)
+                // If it ended up with only 1 app due to distribution, treat as unassigned
+                unassignedApps.addAll(groupApps)
             }
         }
+
+        // Add single apps
+        newItems.addAll(unassignedApps)
 
         items.clear()
         items.addAll(newItems)
@@ -315,16 +378,19 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 for (app in newApps) {
-                    val category = getAppCategory(app.activityInfo.packageName)
+                    val appCategories = getAppCategories(app.activityInfo.packageName)
                     var addedToFolder = false
-                    if (category != null) {
-                        val targetFolder = newItems.find {
-                            it is Folder && it.name.equals(
-                                category, ignoreCase = true
-                            )
-                        } as? Folder
-                        if (targetFolder != null) {
-                            targetFolder.apps.add(app.activityInfo.packageName)
+
+                    if (appCategories.isNotEmpty()) {
+                        // Find all existing folders that match any of the app's categories
+                        val candidateFolders = newItems.filterIsInstance<Folder>().filter { folder ->
+                            appCategories.any { it.equals(folder.name, ignoreCase = true) }
+                        }
+
+                        if (candidateFolders.isNotEmpty()) {
+                            // Pick the smallest folder to keep them even
+                            val targetFolder = candidateFolders.minByOrNull { it.apps.size }
+                            targetFolder?.apps?.add(app.activityInfo.packageName)
                             addedToFolder = true
                         }
                     }
