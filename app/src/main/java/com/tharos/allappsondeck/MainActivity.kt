@@ -201,12 +201,12 @@ class MainActivity : AppCompatActivity() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val builtin = when (appInfo.category) {
                     ApplicationInfo.CATEGORY_GAME -> "Games"
-                    ApplicationInfo.CATEGORY_AUDIO -> "Audio"
-                    ApplicationInfo.CATEGORY_VIDEO -> "Video"
-                    ApplicationInfo.CATEGORY_IMAGE -> "Images"
+                    ApplicationInfo.CATEGORY_AUDIO -> "Media"
+                    ApplicationInfo.CATEGORY_VIDEO -> "Media"
+                    ApplicationInfo.CATEGORY_IMAGE -> "Media"
                     ApplicationInfo.CATEGORY_SOCIAL -> "Social"
                     ApplicationInfo.CATEGORY_NEWS -> "News"
-                    ApplicationInfo.CATEGORY_MAPS -> "Maps"
+                    ApplicationInfo.CATEGORY_MAPS -> "Navigation"
                     ApplicationInfo.CATEGORY_PRODUCTIVITY -> "Productivity"
                     ApplicationInfo.CATEGORY_ACCESSIBILITY -> "Accessibility"
                     else -> null
@@ -220,13 +220,14 @@ class MainActivity : AppCompatActivity() {
             if (isAppForIntent(packageName, Intent(Intent.ACTION_VIEW, "http://google.com".toUri()).addCategory(Intent.CATEGORY_BROWSABLE))) categories.add("Browsers")
 
             // 3. Keyword-Based Heuristics
-            if (label.containsAny("bank", "pay", "wallet", "finance", "credit", "crypto", "invest")) categories.add("Finance")
-            if (label.containsAny("flight", "airline", "hotel", "booking", "travel", "expedia", "airbnb")) categories.add("Travel")
-            if (label.containsAny("taxi", "ride", "uber", "lyft", "grab", "transit", "train", "bus")) categories.add("Transit")
-            if (label.containsAny("shop", "store", "market", "amazon", "ebay", "walmart", "target", "shopping")) categories.add("Shopping")
-            if (label.containsAny("chat", "msg", "messenger", "whatsapp", "signal", "telegram")) categories.add("Communication")
-            if (label.containsAny("mail", "outlook", "gmail")) categories.add("Communication")
-            if (label.containsAny("office", "doc", "sheet", "slide", "pdf", "note", "keep")) categories.add("Productivity")
+            if (label.containsAny("bank", "pay", "wallet", "finance", "credit", "crypto", "invest", "stock")) categories.add("Finance")
+            if (label.containsAny("flight", "airline", "hotel", "booking", "travel", "expedia", "airbnb", "trip")) categories.add("Travel")
+            if (label.containsAny("taxi", "ride", "uber", "lyft", "grab", "transit", "train", "bus", "metro")) categories.add("Transit")
+            if (label.containsAny("shop", "store", "market", "amazon", "ebay", "walmart", "target", "shopping", "cart")) categories.add("Shopping")
+            if (label.containsAny("chat", "msg", "messenger", "whatsapp", "signal", "telegram", "discord", "slack")) categories.add("Communication")
+            if (label.containsAny("mail", "outlook", "gmail", "inbox")) categories.add("Communication")
+            if (label.containsAny("office", "doc", "sheet", "slide", "pdf", "note", "keep", "word", "excel", "ppt")) categories.add("Productivity")
+            if (label.containsAny("photo", "gallery", "camera", "editor", "video", "player", "music", "stream")) categories.add("Media")
 
             // 4. Publisher Check
             if (packageName.startsWith("com.google.android") || packageName.startsWith("com.google.android.apps")) categories.add("Google")
@@ -277,13 +278,14 @@ class MainActivity : AppCompatActivity() {
         }
 
         // 3. Keep only categories that have at least 2 potential members
-        val validCategories = potentialCounts.filter { it.value > 1 }.keys
+        val validCategories = potentialCounts.filter { it.value > 1 }.keys.toList()
 
-        // 4. Assign apps to folders greedily to balance sizes
+        // 4. Initial Assignment: Least flexible apps (fewer category options) first
+        val sortedApps = apps.sortedBy { app -> appToCategories[app]?.count { it in validCategories } ?: 0 }
         val assignments = mutableMapOf<String, MutableList<ResolveInfo>>()
         val unassignedApps = mutableListOf<ResolveInfo>()
 
-        for (app in apps) {
+        for (app in sortedApps) {
             val appCats = appToCategories[app]?.filter { it in validCategories } ?: emptyList()
             if (appCats.isEmpty()) {
                 unassignedApps.add(app)
@@ -294,25 +296,61 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 5. Build new items list
+        // 5. Global Balancing: Iteratively swap apps from the largest folders to the smallest ones
+        var changed: Boolean
+        var safetyCounter = 0
+        val maxIterations = apps.size * 2 // Mathematical guarantee of convergence, but adding safety valve
+        
+        do {
+            changed = false
+            safetyCounter++
+            
+            // Find folders sorted by size (descending)
+            val fromCats = assignments.keys.sortedByDescending { assignments[it]?.size ?: 0 }
+            for (fromCat in fromCats) {
+                val fromApps = assignments[fromCat] ?: continue
+                if (fromApps.size <= 2) continue // Don't shrink already small folders
+
+                // Find folders sorted by size (ascending)
+                val toCats = validCategories.sortedBy { assignments[it]?.size ?: 0 }
+                for (toCat in toCats) {
+                    if (fromCat == toCat) continue
+                    val toAppsSize = assignments[toCat]?.size ?: 0
+                    
+                    // Convergence condition: Move only if it makes the distribution strictly more even
+                    if (fromApps.size > toAppsSize + 1) {
+                        val movableApp = fromApps.find { app -> appToCategories[app]?.contains(toCat) == true }
+                        if (movableApp != null) {
+                            fromApps.remove(movableApp)
+                            assignments.getOrPut(toCat) { mutableListOf() }.add(movableApp)
+                            changed = true
+                            break
+                        }
+                    }
+                }
+                if (changed) break
+            }
+        } while (changed && safetyCounter < maxIterations)
+
+        // 6. Build new items list
         val newItems = mutableListOf<Any>()
         if (actionItem != null) {
             newItems.add(actionItem)
         }
 
-        // Add folders
-        assignments.forEach { (category, groupApps) ->
+        // Add folders that ended up with > 1 app
+        assignments.keys.sorted().forEach { category ->
+            val groupApps = assignments[category] ?: return@forEach
             if (groupApps.size > 1) {
                 val packageNames = groupApps.map { it.activityInfo.packageName }.toMutableList()
                 newItems.add(Folder(category, packageNames))
             } else {
-                // If it ended up with only 1 app due to distribution, treat as unassigned
                 unassignedApps.addAll(groupApps)
             }
         }
 
         // Add single apps
-        newItems.addAll(unassignedApps)
+        newItems.addAll(unassignedApps.sortedBy { it.loadLabel(packageManager).toString().lowercase() })
 
         items.clear()
         items.addAll(newItems)
