@@ -16,8 +16,8 @@ import androidx.recyclerview.widget.RecyclerView
 
 class AppsAdapter(
     private val mainActivity: MainActivity,
-    private val items: MutableList<Any>,
-    private val isFolderAdapter: Boolean = false
+    internal val items: MutableList<Any>,
+    internal val isFolderAdapter: Boolean = false
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     companion object {
@@ -185,43 +185,60 @@ class AppsAdapter(
                 }
                 DragEvent.ACTION_DROP -> {
                     hideDropCaret(v)
-                    val fromPosition = (event.localState as? View)?.let { 
-                        (v.parent as? RecyclerView)?.getChildViewHolder(it)?.bindingAdapterPosition 
-                    } ?: return false
+                    val dragView = event.localState as? View
+                    val sourceRecyclerView = dragView?.parent as? RecyclerView
+                    val sourceAdapter = sourceRecyclerView?.adapter as? AppsAdapter
 
-                    if (toPosition == fromPosition) return true
+                    val fromPosition = if (sourceRecyclerView == v.parent) {
+                        sourceRecyclerView.getChildViewHolder(dragView)?.bindingAdapterPosition ?: -1
+                    } else -1
 
-                    val dropX = event.x
-                    val viewWidth = v.width
-                    val oneThird = viewWidth / 3
+                    if (fromPosition != -1) {
+                        if (toPosition == fromPosition) return true
 
-                    when {
-                        dropX <= oneThird -> {
-                            val movedItem = items.removeAt(fromPosition)
-                            val finalPosition = if (fromPosition < toPosition) toPosition - 1 else toPosition
-                            if (finalPosition <= items.size) {
-                                items.add(finalPosition, movedItem)
-                                notifyItemMoved(fromPosition, finalPosition)
+                        val dropX = event.x
+                        val viewWidth = v.width
+                        val oneThird = viewWidth / 3
+
+                        when {
+                            dropX <= oneThird -> {
+                                val movedItem = items.removeAt(fromPosition)
+                                val finalPosition = if (fromPosition < toPosition) toPosition - 1 else toPosition
+                                if (finalPosition <= items.size) {
+                                    items.add(finalPosition, movedItem)
+                                    notifyItemMoved(fromPosition, finalPosition)
+                                }
+                                mainActivity.saveAppOrder()
                             }
-                            mainActivity.saveAppOrder()
-                        }
-                        dropX >= viewWidth - oneThird -> {
-                            val movedItem = items.removeAt(fromPosition)
-                            val targetPos = toPosition + 1
-                            val finalPosition = if (fromPosition < targetPos) targetPos - 1 else targetPos
-                            if (finalPosition <= items.size) {
-                                items.add(finalPosition, movedItem)
-                                notifyItemMoved(fromPosition, finalPosition)
+                            dropX >= viewWidth - oneThird -> {
+                                val movedItem = items.removeAt(fromPosition)
+                                val targetPos = toPosition + 1
+                                val finalPosition = if (fromPosition < targetPos) targetPos - 1 else targetPos
+                                if (finalPosition <= items.size) {
+                                    items.add(finalPosition, movedItem)
+                                    notifyItemMoved(fromPosition, finalPosition)
+                                }
+                                mainActivity.saveAppOrder()
                             }
-                            mainActivity.saveAppOrder()
+                            else -> {
+                                if(canDropInMiddle) {
+                                    handleSpecificDrop(fromPosition, toPosition)
+                                }
+                            }
                         }
-                        else -> {
-                            if(canDropInMiddle) {
-                                handleSpecificDrop(fromPosition, toPosition)
+                        return true
+                    } else if (sourceAdapter?.isFolderAdapter == true && !isFolderAdapter) {
+                        // Dragging from folder to main list item
+                        val pos = sourceRecyclerView.getChildViewHolder(dragView)?.bindingAdapterPosition
+                        if (pos != null && pos != RecyclerView.NO_POSITION) {
+                            val item = sourceAdapter.items[pos]
+                            if (item is ResolveInfo) {
+                                mainActivity.removeAppFromFolder(item)
+                                return true
                             }
                         }
                     }
-                    return true
+                    return false
                 }
                 DragEvent.ACTION_DRAG_ENDED -> {
                     hideDropCaret(v)

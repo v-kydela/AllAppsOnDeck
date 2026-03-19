@@ -17,6 +17,8 @@ import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
+import android.view.DragEvent
+import android.view.ViewGroup
 import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
@@ -37,7 +39,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var appsList: RecyclerView
     internal var popupMenu: PopupMenu? = null
-    private lateinit var items: MutableList<Any>
+    internal lateinit var items: MutableList<Any>
 
     internal var isDragging = false
     private var startX = 0f
@@ -84,7 +86,7 @@ class MainActivity : AppCompatActivity() {
                         val position =
                             recyclerView.getChildViewHolder(viewToDrag)?.bindingAdapterPosition
                         if (position != null) {
-                            val item = items[position]
+                            val item = (recyclerView.adapter as? AppsAdapter)?.items?.get(position)
 
                             val mimeType = when (item) {
                                 is ResolveInfo -> "vnd.android.cursor.item/app"
@@ -126,16 +128,39 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private val appDragListener = View.OnDragListener { _, event ->
-        if (event.action == android.view.DragEvent.ACTION_DRAG_ENDED) {
-            // Get the original view back from the localState
-            val view = event.localState as? View
-            // Post the visibility change to ensure it runs on the UI thread safely
-            view?.post { view.visibility = View.VISIBLE }
-            // Reset the dragging state
-            isDragging = false
+    private val appDragListener = View.OnDragListener { v, event ->
+        when (event.action) {
+            DragEvent.ACTION_DRAG_STARTED -> {
+                // We only care about app drags for this behavior
+                event.clipDescription.hasMimeType("vnd.android.cursor.item/app")
+            }
+            DragEvent.ACTION_DROP -> {
+                val dragView = event.localState as? View ?: return@OnDragListener false
+                val sourceRecyclerView = dragView.parent as? RecyclerView ?: return@OnDragListener false
+                val sourceAdapter = sourceRecyclerView.adapter as? AppsAdapter
+
+                if (sourceAdapter?.isFolderAdapter == true && v != sourceRecyclerView) {
+                    // Dragged from folder and dropped OUTSIDE the folder's internal list
+                    // Because we "shielded" the dialog content, this only happens on the background scrim.
+                    val pos = sourceRecyclerView.getChildViewHolder(dragView).bindingAdapterPosition
+                    if (pos != RecyclerView.NO_POSITION) {
+                        val item = sourceAdapter.items[pos]
+                        if (item is ResolveInfo) {
+                            removeAppFromFolder(item)
+                            return@OnDragListener true
+                        }
+                    }
+                }
+                false
+            }
+            DragEvent.ACTION_DRAG_ENDED -> {
+                val view = event.localState as? View
+                view?.post { view.visibility = View.VISIBLE }
+                isDragging = false
+                true
+            }
+            else -> true
         }
-        true // Indicate the event was handled
     }
 
     private val refreshReceiver = object : BroadcastReceiver() {
@@ -545,7 +570,14 @@ class MainActivity : AppCompatActivity() {
         val adapter = AppsAdapter(this, ArrayList(folderAppsResolved), true)
         folderAppsList.adapter = adapter
         folderAppsList.setOnTouchListener(appTouchListener)
-        folderAppsList.setOnDragListener(appDragListener)
+        folderAppsList.setOnDragListener(appDragListener) // Restore reordering
+
+        // Shield the dialog content area so drops on title/padding do nothing
+        dialogView.setOnDragListener { _, event ->
+            if (event.action == DragEvent.ACTION_DRAG_STARTED) {
+                event.clipDescription.hasMimeType("vnd.android.cursor.item/app")
+            } else true // Consume all other events, including ACTION_DROP
+        }
 
         activeFolder = folder
         activeFolderAdapter = adapter
@@ -559,6 +591,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         dialog.show()
+        
+        // Fix width to prevent the dialog from expanding to fill the screen
+        val width = (resources.displayMetrics.widthPixels * 0.9).toInt()
+        dialog.window?.setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT)
+        
+        // Handle drops on the dimmed background area (the window scrim)
+        dialog.window?.decorView?.setOnDragListener(appDragListener)
     }
 
     @SuppressLint("NotifyDataSetChanged")
@@ -633,15 +672,18 @@ class MainActivity : AppCompatActivity() {
         val folderIndex = items.indexOf(folder)
 
         folder.apps.remove(app.activityInfo.packageName)
-        // Add app back to the main list, right after the folder it came from
-        if (folderIndex != -1) {
-            items.add(folderIndex + 1, app)
-        } else {
-            items.add(app)
-        }
+        
+        // Surgical update for the main list instead of notifyDataSetChanged()
+        val insertPos = if (folderIndex != -1) folderIndex + 1 else items.size
+        items.add(insertPos, app)
+        appsList.adapter?.notifyItemInserted(insertPos)
 
         if (folder.apps.isEmpty()) {
-            items.remove(folder)
+            val idx = items.indexOf(folder)
+            if (idx != -1) {
+                items.removeAt(idx)
+                appsList.adapter?.notifyItemRemoved(idx)
+            }
             if (activeFolder == folder) {
                 activeFolderDialog?.dismiss()
             }
@@ -650,9 +692,13 @@ class MainActivity : AppCompatActivity() {
             val folderAppsResolved =
                 apps.filter { folder.apps.contains(it.activityInfo.packageName) }
             activeFolderAdapter?.updateItems(ArrayList(folderAppsResolved))
+            
+            // Notify main list that folder icon changed
+            if (folderIndex != -1) {
+                appsList.adapter?.notifyItemChanged(folderIndex)
+            }
         }
 
-        appsList.adapter?.notifyDataSetChanged()
         saveAppOrder()
     }
 }
