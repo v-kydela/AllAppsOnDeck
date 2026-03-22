@@ -289,7 +289,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     @SuppressLint("NotifyDataSetChanged")
-    internal fun autoSortApps() {
+    internal fun autoOrganizeApps() {
         val actionItem = items.find { it is GlobalActionItem }
         val apps = getInstalledLauncherApps()
 
@@ -381,7 +381,7 @@ class MainActivity : AppCompatActivity() {
         items.addAll(newItems)
         appsList.adapter?.notifyDataSetChanged()
         saveAppOrder()
-        Toast.makeText(this, "Apps sorted into folders", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Apps organized into folders", Toast.LENGTH_SHORT).show()
     }
 
     override fun onDestroy() {

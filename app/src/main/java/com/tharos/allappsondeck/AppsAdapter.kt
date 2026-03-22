@@ -24,7 +24,7 @@ class AppsAdapter(
         private const val TYPE_APP = 0
         private const val TYPE_FOLDER = 1
         private const val TYPE_ACTION = 2
-        private const val MENU_AUTO_SORT = "Auto Sort"
+        private const val MENU_AUTO_ORGANIZE = "Auto Organize"
         private const val MENU_CREATE_FOLDER = "Create Folder"
         private const val MENU_EMPTY_ALL_FOLDERS = "Empty All Folders"
         private const val MENU_APP_INFO = "App Info"
@@ -422,14 +422,14 @@ class AppsAdapter(
         val actionName: TextView = itemView.findViewById(R.id.action_name)
 
         private fun populateMenu(popup: PopupMenu) {
-            popup.menu.add(MENU_AUTO_SORT)
+            popup.menu.add(MENU_AUTO_ORGANIZE)
             popup.menu.add(MENU_EMPTY_ALL_FOLDERS)
             popup.menu.add(MENU_REFRESH)
             popup.menu.add(MENU_APP_INFO)
             popup.setOnMenuItemClickListener { menuItem ->
                 when (menuItem.title) {
-                    MENU_AUTO_SORT -> {
-                        mainActivity.autoSortApps()
+                    MENU_AUTO_ORGANIZE -> {
+                        mainActivity.autoOrganizeApps()
                         true
                     }
                     MENU_EMPTY_ALL_FOLDERS -> {
