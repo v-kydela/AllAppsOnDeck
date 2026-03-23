@@ -4,7 +4,7 @@
     android:id="@+id/drop_caret"
     android:layout_width="4dp"
     android:layout_height="64dp"
-    android:background="@color/drop_target_highlight"
+    android:foreground="@color/drop_target_highlight"
     android:visibility="invisible"
     app:layout_constraintTop_toTopOf="parent"
     app:layout_constraintStart_toStartOf="parent" />

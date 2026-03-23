@@ -4,7 +4,6 @@
     style="@style/ListItemContainer">
 
     <ImageView
-        android:id="@+id/action_icon"
         android:layout_width="48dp"
         android:layout_height="48dp"
         android:contentDescription="@string/actions_label"
