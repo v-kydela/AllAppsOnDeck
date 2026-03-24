@@ -34,6 +34,7 @@ import androidx.core.view.updatePadding
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import kotlin.math.abs
+import kotlin.math.max
 
 class MainActivity : AppCompatActivity() {
 
@@ -131,8 +132,11 @@ class MainActivity : AppCompatActivity() {
     private val appDragListener = View.OnDragListener { v, event ->
         when (event.action) {
             DragEvent.ACTION_DRAG_STARTED -> {
-                // We only care about app drags for this behavior
-                event.clipDescription.hasMimeType("vnd.android.cursor.item/app")
+                // Accept drags for apps, folders, and actions
+                val mimeTypes = event.clipDescription
+                mimeTypes.hasMimeType("vnd.android.cursor.item/app") || 
+                mimeTypes.hasMimeType("vnd.android.cursor.item/folder") ||
+                mimeTypes.hasMimeType("vnd.android.cursor.item/action")
             }
             DragEvent.ACTION_DROP -> {
                 val dragView = event.localState as? View ?: return@OnDragListener false
@@ -188,14 +192,39 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         appsList = findViewById(R.id.apps_list)
+        val rootLayout = appsList.parent as View
 
-        ViewCompat.setOnApplyWindowInsetsListener(appsList) { view, insets ->
+        // Set a default layout manager immediately to prevent flickering while waiting for insets
+        appsList.layoutManager = GridLayoutManager(this, 4, GridLayoutManager.VERTICAL, true)
+
+        ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { view, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.updatePadding(top = systemBars.top, bottom = systemBars.bottom)
+            val displayCutout = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
+            
+            val paddingLeft = max(systemBars.left, displayCutout.left)
+            val paddingTop = max(systemBars.top, displayCutout.top)
+            val paddingRight = max(systemBars.right, displayCutout.right)
+            val paddingBottom = max(systemBars.bottom, displayCutout.bottom)
+
+            view.updatePadding(paddingLeft, paddingTop, paddingRight, paddingBottom)
+            
+            // Recalculate span count using the new usable width
+            val density = resources.displayMetrics.density
+            val screenWidthPx = resources.displayMetrics.widthPixels
+            val usableWidthPx = screenWidthPx - paddingLeft - paddingRight
+            val usableWidthDp = usableWidthPx / density
+            
+            val itemWidthDp = resources.getDimension(R.dimen.grid_item_width) / density
+            val spanCount = (usableWidthDp / itemWidthDp).toInt().coerceAtLeast(4)
+            
+            // Only update if the span count actually changed to avoid unnecessary re-layouts
+            val currentLayout = appsList.layoutManager as? GridLayoutManager
+            if (currentLayout?.spanCount != spanCount) {
+                appsList.layoutManager = GridLayoutManager(this, spanCount, GridLayoutManager.VERTICAL, true)
+            }
+            
             insets
         }
-
-        appsList.layoutManager = GridLayoutManager(this, 4, GridLayoutManager.VERTICAL, true)
 
         refreshApps()
 
@@ -557,7 +586,15 @@ class MainActivity : AppCompatActivity() {
         val folderAppsList = dialogView.findViewById<RecyclerView>(R.id.apps_list)
 
         folderTitle.text = folder.name
-        folderAppsList.layoutManager = GridLayoutManager(this, 4)
+        
+        // Calculate span count for the folder dialog
+        val density = resources.displayMetrics.density
+        val screenWidthPx = resources.displayMetrics.widthPixels
+        val usableWidthDp = screenWidthPx / density
+        val itemWidthDp = resources.getDimension(R.dimen.grid_item_width) / density
+        val spanCount = (usableWidthDp / itemWidthDp).toInt().coerceAtLeast(4)
+
+        folderAppsList.layoutManager = GridLayoutManager(this, spanCount, GridLayoutManager.VERTICAL, true)
 
         val dialog = AlertDialog.Builder(this).setView(dialogView).create()
 
