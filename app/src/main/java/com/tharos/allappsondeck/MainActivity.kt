@@ -159,7 +159,14 @@ class MainActivity : AppCompatActivity() {
             }
             DragEvent.ACTION_DRAG_ENDED -> {
                 val view = event.localState as? View
-                view?.post { view.visibility = View.VISIBLE }
+                if (view != null) {
+                    // Use post to ensure we're out of the drag event cycle
+                    view.post {
+                        view.visibility = View.VISIBLE
+                        // Sometimes a forced requestLayout on the parent helps stabilize Dialogs
+                        (view.parent as? View)?.requestLayout()
+                    }
+                }
                 isDragging = false
                 true
             }
