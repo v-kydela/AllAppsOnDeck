@@ -601,7 +601,7 @@ class MainActivity : AppCompatActivity() {
         val itemWidthDp = resources.getDimension(R.dimen.grid_item_width) / density
         val spanCount = (usableWidthDp / itemWidthDp).toInt().coerceAtLeast(4)
 
-        folderAppsList.layoutManager = GridLayoutManager(this, spanCount, GridLayoutManager.VERTICAL, true)
+        folderAppsList.layoutManager = GridLayoutManager(this, spanCount, GridLayoutManager.VERTICAL, false)
 
         val dialog = AlertDialog.Builder(this).setView(dialogView).create()
 
