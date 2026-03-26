@@ -159,13 +159,10 @@ class MainActivity : AppCompatActivity() {
             }
             DragEvent.ACTION_DRAG_ENDED -> {
                 val view = event.localState as? View
-                if (view != null) {
-                    // Use post to ensure we're out of the drag event cycle
-                    view.post {
-                        view.visibility = View.VISIBLE
-                        // Sometimes a forced requestLayout on the parent helps stabilize Dialogs
-                        (view.parent as? View)?.requestLayout()
-                    }
+                view?.post {
+                    view.visibility = View.VISIBLE
+                    // Sometimes a forced requestLayout on the parent helps stabilize Dialogs
+                    (view.parent as? View)?.requestLayout()
                 }
                 isDragging = false
                 true
@@ -199,24 +196,29 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         appsList = findViewById(R.id.apps_list)
-        val rootLayout = appsList.parent as View
 
         // Set a default layout manager immediately to prevent flickering while waiting for insets
         appsList.layoutManager = GridLayoutManager(this, 4, GridLayoutManager.VERTICAL, true)
 
-        ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { view, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+        ViewCompat.setOnApplyWindowInsetsListener(appsList) { view, insets ->
+            // Using getInsetsIgnoringVisibility ensures that we reserve space for the system bars
+            // even if they are currently hidden or transitioning, preventing the "jump" or flicker.
+            val systemBars = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
             val displayCutout = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
             
-            val paddingLeft = max(systemBars.left, displayCutout.left)
+            val density = resources.displayMetrics.density
+            val horizontalPadding = (12 * density).toInt()
+
+            val paddingLeft = max(systemBars.left, displayCutout.left) + horizontalPadding
             val paddingTop = max(systemBars.top, displayCutout.top)
-            val paddingRight = max(systemBars.right, displayCutout.right)
+            val paddingRight = max(systemBars.right, displayCutout.right) + horizontalPadding
             val paddingBottom = max(systemBars.bottom, displayCutout.bottom)
 
+            // Padding the RecyclerView itself with clipToPadding="false" (set in XML)
+            // allows it to remain full-screen while keeping content clear of system bars.
             view.updatePadding(paddingLeft, paddingTop, paddingRight, paddingBottom)
             
             // Recalculate span count using the new usable width
-            val density = resources.displayMetrics.density
             val screenWidthPx = resources.displayMetrics.widthPixels
             val usableWidthPx = screenWidthPx - paddingLeft - paddingRight
             val usableWidthDp = usableWidthPx / density
@@ -224,9 +226,13 @@ class MainActivity : AppCompatActivity() {
             val itemWidthDp = resources.getDimension(R.dimen.grid_item_width) / density
             val spanCount = (usableWidthDp / itemWidthDp).toInt().coerceAtLeast(4)
             
-            // Only update if the span count actually changed to avoid unnecessary re-layouts
+            // Update spanCount without recreating the LayoutManager to avoid unnecessary re-layouts
             val currentLayout = appsList.layoutManager as? GridLayoutManager
-            if (currentLayout?.spanCount != spanCount) {
+            if (currentLayout != null) {
+                if (currentLayout.spanCount != spanCount) {
+                    currentLayout.spanCount = spanCount
+                }
+            } else {
                 appsList.layoutManager = GridLayoutManager(this, spanCount, GridLayoutManager.VERTICAL, true)
             }
             
