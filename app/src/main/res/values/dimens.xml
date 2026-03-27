@@ -1,3 +1,4 @@
 <resources>
-    <dimen name="grid_item_width">100dp</dimen>
+    <dimen name="grid_item_width">90dp</dimen>
+    <dimen name="folder_grid_item_width">80dp</dimen>
 </resources>

@@ -603,9 +603,16 @@ class MainActivity : AppCompatActivity() {
         // Calculate span count for the folder dialog
         val density = resources.displayMetrics.density
         val screenWidthPx = resources.displayMetrics.widthPixels
-        val usableWidthDp = screenWidthPx / density
-        val itemWidthDp = resources.getDimension(R.dimen.grid_item_width) / density
-        val spanCount = (usableWidthDp / itemWidthDp).toInt().coerceAtLeast(4)
+        
+        // Use 90% width (matching dialog.window.setLayout below)
+        val dialogWidthPx = screenWidthPx * 0.9
+        // Account for 16dp horizontal margins from the XML
+        val usableWidthPx = dialogWidthPx - (32 * density)
+        val usableWidthDp = usableWidthPx / density
+        
+        // Use smaller width for folder items for better visual hierarchy
+        val itemWidthDp = resources.getDimension(R.dimen.folder_grid_item_width) / density
+        val spanCount = (usableWidthDp / itemWidthDp).toInt().coerceAtLeast(3)
 
         folderAppsList.layoutManager = GridLayoutManager(this, spanCount, GridLayoutManager.VERTICAL, false)
 
