@@ -3,12 +3,28 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     style="@style/ListItemContainer">
 
-    <ImageView
+    <FrameLayout
         android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:contentDescription="@string/actions_label"
-        android:src="@android:drawable/ic_menu_sort_by_size"
-        app:tint="@color/icon_tint_color"/>
+        android:layout_height="48dp">
+
+        <!-- Shadow Layer (Matched to your Label Shadow) -->
+        <ImageView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_marginStart="1dp"
+            android:layout_marginTop="1dp"
+            android:src="@drawable/ic_action_menu"
+            android:importantForAccessibility="no"
+            app:tint="#CC000000" />
+
+        <!-- Main Opaque Icon -->
+        <ImageView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="@string/actions_label"
+            android:src="@drawable/ic_action_menu"
+            app:tint="@android:color/white" />
+    </FrameLayout>
 
     <include
         android:id="@+id/action_name"
