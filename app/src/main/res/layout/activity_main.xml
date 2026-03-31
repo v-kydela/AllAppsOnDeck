@@ -20,4 +20,37 @@
 
     <include layout="@layout/layout_drop_caret" />
 
+    <!-- Custom Folder Overlay -->
+    <FrameLayout
+        android:id="@+id/folder_overlay_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#99000000"
+        android:visibility="gone"
+        android:clickable="true"
+        android:focusable="true"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <androidx.cardview.widget.CardView
+            android:id="@+id/folder_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_margin="24dp"
+            android:clickable="true"
+            android:focusable="true"
+            app:cardCornerRadius="28dp"
+            app:cardElevation="8dp"
+            app:cardBackgroundColor="?attr/colorSurface">
+
+            <include
+                android:id="@+id/folder_content"
+                layout="@layout/dialog_folder_view" />
+
+        </androidx.cardview.widget.CardView>
+    </FrameLayout>
+
 </androidx.constraintlayout.widget.ConstraintLayout>
