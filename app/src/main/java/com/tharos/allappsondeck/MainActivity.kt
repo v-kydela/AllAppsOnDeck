@@ -138,7 +138,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private val appDragListener = View.OnDragListener { v, event ->
+    private val appDragListener = View.OnDragListener { _, event ->
         when (event.action) {
             DragEvent.ACTION_DRAG_STARTED -> {
                 // Accept drags for apps, folders, and actions
@@ -148,21 +148,6 @@ class MainActivity : AppCompatActivity() {
                 mimeTypes.hasMimeType("vnd.android.cursor.item/action")
             }
             DragEvent.ACTION_DROP -> {
-                val dragView = event.localState as? View ?: return@OnDragListener false
-                val sourceRecyclerView = dragView.parent as? RecyclerView ?: return@OnDragListener false
-                val sourceAdapter = sourceRecyclerView.adapter as? AppsAdapter
-
-                if (sourceAdapter?.isFolderAdapter == true && v != sourceRecyclerView) {
-                    // Dragged from folder and dropped OUTSIDE the folder's internal list
-                    val pos = sourceRecyclerView.getChildViewHolder(dragView).bindingAdapterPosition
-                    if (pos != RecyclerView.NO_POSITION) {
-                        val item = sourceAdapter.items[pos]
-                        if (item is ResolveInfo) {
-                            removeAppFromFolder(item)
-                            return@OnDragListener true
-                        }
-                    }
-                }
                 false
             }
             DragEvent.ACTION_DRAG_ENDED -> {
