@@ -265,7 +265,6 @@ class MainActivity : AppCompatActivity() {
         backCallback.isEnabled = false
         activeFolder = null
         activeFolderAdapter = null
-        refreshApps()
     }
 
     fun showAppDetails(packageName: String) {
