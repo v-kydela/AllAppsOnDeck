@@ -34,6 +34,7 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import kotlin.math.abs
 import kotlin.math.max
+import androidx.core.view.isVisible
 
 class MainActivity : AppCompatActivity() {
 
@@ -138,7 +139,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private val appDragListener = View.OnDragListener { _, event ->
+    private val appDragListener = View.OnDragListener { v, event ->
+        if (isFolderOverlayVisible() && v === appsList) {
+            return@OnDragListener false
+        }
         when (event.action) {
             DragEvent.ACTION_DRAG_STARTED -> {
                 // Accept drags for apps, folders, and actions
@@ -248,16 +252,18 @@ class MainActivity : AppCompatActivity() {
         folderOverlayContainer.setOnClickListener {
             dismissFolderOverlay()
         }
-        folderOverlayContainer.setOnDragListener(appDragListener)
+        // folderOverlayContainer.setOnDragListener(appDragListener)
 
         // Shield the folder content area so drops on title/padding do nothing
-        folderContent.setOnDragListener { _, event ->
-            if (event.action == DragEvent.ACTION_DRAG_STARTED) {
-                event.clipDescription.hasMimeType("vnd.android.cursor.item/app")
-            } else true // Consume all other events, including ACTION_DROP
+        folderContent.setOnDragListener { _, _ ->
+            false // Do not consume
         }
 
         onBackPressedDispatcher.addCallback(this, backCallback)
+    }
+
+    fun isFolderOverlayVisible(): Boolean {
+        return folderOverlayContainer.isVisible
     }
 
     private fun dismissFolderOverlay() {

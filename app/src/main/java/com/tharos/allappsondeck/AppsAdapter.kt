@@ -144,6 +144,12 @@ class AppsAdapter(
         abstract fun createPopupMenu()
 
         override fun onDrag(v: View, event: DragEvent): Boolean {
+            // If the folder overlay is open, the main list (and its items) should not respond to drag events.
+            // This prevents the main list from "stealing" drops intended for the folder.
+            if (mainActivity.isFolderOverlayVisible() && !isFolderAdapter) {
+                return false
+            }
+
             val toPosition = bindingAdapterPosition
             if (toPosition == RecyclerView.NO_POSITION) return false
 
@@ -188,9 +194,7 @@ class AppsAdapter(
                     val dragView = event.localState as? View
                     val sourceRecyclerView = dragView?.parent as? RecyclerView
 
-                    val fromPosition = if (sourceRecyclerView == v.parent) {
-                        sourceRecyclerView.getChildViewHolder(dragView)?.bindingAdapterPosition ?: -1
-                    } else -1
+                    val fromPosition = sourceRecyclerView?.getChildViewHolder(dragView)?.bindingAdapterPosition ?: -1
 
                     if (fromPosition != -1) {
                         if (toPosition == fromPosition) return true
@@ -233,6 +237,11 @@ class AppsAdapter(
                     hideDropCaret(v)
                     mainActivity.isDragging = false
                     mainActivity.longPressedView = null
+
+                    val dragView = event.localState as? View
+                    dragView?.post {
+                        dragView.visibility = View.VISIBLE
+                    }
                     return true
                 }
                 else -> return false
@@ -472,6 +481,7 @@ class AppsAdapter(
     }
 
     override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+        holder.itemView.visibility = View.VISIBLE
         when (holder) {
             is AppViewHolder -> {
                 val app = items[position] as ResolveInfo
