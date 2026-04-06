@@ -16,6 +16,7 @@ import android.provider.Settings
 import android.view.DragEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.PopupMenu
 import android.widget.TextView
@@ -190,6 +191,9 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
         setContentView(R.layout.activity_main)
 
         appsList = findViewById(R.id.apps_list)
@@ -219,6 +223,14 @@ class MainActivity : AppCompatActivity() {
             // allows it to remain full-screen while keeping content clear of system bars.
             view.updatePadding(paddingLeft, paddingTop, paddingRight, paddingBottom)
             
+            // Apply padding to folder overlay container to center the folder card within the usable area
+            folderOverlayContainer.updatePadding(
+                max(systemBars.left, displayCutout.left),
+                max(systemBars.top, displayCutout.top),
+                max(systemBars.right, displayCutout.right),
+                max(systemBars.bottom, displayCutout.bottom)
+            )
+
             // Recalculate span count using the new usable width
             val screenWidthPx = resources.displayMetrics.widthPixels
             val usableWidthPx = screenWidthPx - paddingLeft - paddingRight
