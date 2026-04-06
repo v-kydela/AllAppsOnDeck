@@ -54,8 +54,14 @@ class AppsAdapter(
             val recyclerView = v.parent as? RecyclerView ?: return
             val caret = (recyclerView.parent as? ViewGroup)?.findViewById<View>(R.id.drop_caret) ?: return
             
-            val fromPosition = (event.localState as? View)?.let { 
-                recyclerView.getChildViewHolder(it)?.bindingAdapterPosition 
+            val dragView = event.localState as? View
+            val fromPosition = dragView?.let { dv ->
+                val parentRv = dv.parent as? RecyclerView
+                if (parentRv != null && parentRv === recyclerView) {
+                    parentRv.getChildViewHolder(dv)?.bindingAdapterPosition
+                } else {
+                    -1
+                }
             } ?: -1
             
             val toPosition = bindingAdapterPosition
@@ -144,19 +150,14 @@ class AppsAdapter(
         abstract fun createPopupMenu()
 
         override fun onDrag(v: View, event: DragEvent): Boolean {
-            // If the folder overlay is open, the main list (and its items) should not respond to drag events.
-            // This prevents the main list from "stealing" drops intended for the folder.
-            if (mainActivity.isFolderOverlayVisible() && !isFolderAdapter) {
-                return false
-            }
-
+            if (isFolderAdapter) return false
             val toPosition = bindingAdapterPosition
             if (toPosition == RecyclerView.NO_POSITION) return false
 
             val isDraggingApp = event.clipDescription?.hasMimeType("vnd.android.cursor.item/app") ?: false
 
             val canDropInMiddle = when (this) {
-                is AppViewHolder -> !isFolderAdapter && isDraggingApp
+                is AppViewHolder -> isDraggingApp
                 is FolderViewHolder -> isDraggingApp
                 else -> false
             }
@@ -192,9 +193,10 @@ class AppsAdapter(
                 DragEvent.ACTION_DROP -> {
                     hideDropCaret(v)
                     val dragView = event.localState as? View
-                    val sourceRecyclerView = dragView?.parent as? RecyclerView
 
-                    val fromPosition = sourceRecyclerView?.getChildViewHolder(dragView)?.bindingAdapterPosition ?: -1
+                    val fromPosition = dragView?.let {
+                        (it.parent as? RecyclerView)?.getChildViewHolder(it)?.bindingAdapterPosition
+                    } ?: -1
 
                     if (fromPosition != -1) {
                         if (toPosition == fromPosition) return true
