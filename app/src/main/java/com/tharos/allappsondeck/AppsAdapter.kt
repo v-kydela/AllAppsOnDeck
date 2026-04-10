@@ -116,6 +116,18 @@ class AppsAdapter(
             caret?.visibility = View.INVISIBLE
         }
 
+        private fun calculateDropPosition(fromPosition: Int, toPosition: Int, dropX: Float, viewWidth: Int): Int {
+            val oneThird = viewWidth / 3
+            return when {
+                dropX <= oneThird -> if (fromPosition < toPosition) toPosition - 1 else toPosition
+                dropX >= viewWidth - oneThird -> {
+                    val targetPos = toPosition + 1
+                    if (fromPosition < targetPos) targetPos - 1 else targetPos
+                }
+                else -> -1 // Drop in middle
+            }
+        }
+
         override fun onClick(v: View?) {
             if (mainActivity.popupMenu != null) {
                 mainActivity.popupMenu?.dismiss()
@@ -192,48 +204,101 @@ class AppsAdapter(
                 }
                 DragEvent.ACTION_DROP -> {
                     hideDropCaret(v)
-                    val dragView = event.localState as? View
+                    val dragView = event.localState as? View ?: return false
+                    val sourceRv = dragView.parent as? RecyclerView ?: return false
+                    val targetRv = v.parent as? RecyclerView ?: return false
 
-                    val fromPosition = dragView?.let {
-                        (it.parent as? RecyclerView)?.getChildViewHolder(it)?.bindingAdapterPosition
-                    } ?: -1
+                    val fromPosition = sourceRv.getChildViewHolder(dragView)?.bindingAdapterPosition ?: -1
+                    if (fromPosition == -1) return false
 
-                    if (fromPosition != -1) {
-                        if (toPosition == fromPosition) return true
+                    val movedItem = (sourceRv.adapter as? AppsAdapter)?.items?.removeAt(fromPosition) ?: return false
 
+                    if (sourceRv === targetRv) {
+                        val finalPosition = calculateDropPosition(fromPosition, toPosition, event.x, v.width)
+                        if (finalPosition != -1) {
+                            items.add(finalPosition, movedItem)
+                            notifyItemMoved(fromPosition, finalPosition)
+                        } else {
+                            // Handle drop in middle (folder creation/addition)
+                            if (canDropInMiddle) {
+                                items.add(fromPosition, movedItem) // Put it back first
+                                handleSpecificDrop(fromPosition, toPosition)
+                            } else {
+                                items.add(fromPosition, movedItem)
+                                notifyItemChanged(fromPosition)
+                            }
+                        }
+                    } else {
+                        // Cross-list drag
                         val dropX = event.x
                         val viewWidth = v.width
                         val oneThird = viewWidth / 3
 
-                        when {
-                            dropX <= oneThird -> {
-                                val movedItem = items.removeAt(fromPosition)
-                                val finalPosition = if (fromPosition < toPosition) toPosition - 1 else toPosition
-                                if (finalPosition <= items.size) {
-                                    items.add(finalPosition, movedItem)
-                                    notifyItemMoved(fromPosition, finalPosition)
+                        if (dropX <= oneThird || dropX >= viewWidth - oneThird) {
+                            val targetPos = if (dropX <= oneThird) toPosition else toPosition + 1
+                            items.add(targetPos, movedItem)
+                            notifyItemInserted(targetPos)
+                            sourceRv.adapter?.notifyItemRemoved(fromPosition)
+                        } else if (canDropInMiddle) {
+                            // Drop into folder or create folder
+                            val toItem = items[toPosition]
+                            when (movedItem) {
+                                is ResolveInfo if toItem is ResolveInfo -> {
+                                    // Create new folder
+                                    val folderApps =
+                                        mutableListOf(toItem.activityInfo.packageName, movedItem.activityInfo.packageName)
+                                    val suggestedName = mainActivity.getFolderNameForApps(folderApps)
+                                    items[toPosition] = Folder(suggestedName, folderApps)
+                                    notifyItemChanged(toPosition)
+                                    sourceRv.adapter?.notifyItemRemoved(fromPosition)
                                 }
-                                mainActivity.saveAppOrder()
-                            }
-                            dropX >= viewWidth - oneThird -> {
-                                val movedItem = items.removeAt(fromPosition)
-                                val targetPos = toPosition + 1
-                                val finalPosition = if (fromPosition < targetPos) targetPos - 1 else targetPos
-                                if (finalPosition <= items.size) {
-                                    items.add(finalPosition, movedItem)
-                                    notifyItemMoved(fromPosition, finalPosition)
+
+                                is ResolveInfo if toItem is Folder -> {
+                                    // Add to existing folder
+                                    toItem.apps.add(movedItem.activityInfo.packageName)
+                                    notifyItemChanged(toPosition)
+                                    sourceRv.adapter?.notifyItemRemoved(fromPosition)
                                 }
-                                mainActivity.saveAppOrder()
+
+                                else -> {
+                                    // Fallback: just insert it
+                                    items.add(toPosition, movedItem)
+                                    notifyItemInserted(toPosition)
+                                    sourceRv.adapter?.notifyItemRemoved(fromPosition)
+                                }
                             }
-                            else -> {
-                                if(canDropInMiddle) {
-                                    handleSpecificDrop(fromPosition, toPosition)
+                        } else {
+                            // Fallback for non-middle drops that aren't clearly left/right
+                            items.add(toPosition, movedItem)
+                            notifyItemInserted(toPosition)
+                            sourceRv.adapter?.notifyItemRemoved(fromPosition)
+                        }
+
+                        // Sync folder state
+                        mainActivity.activeFolder?.let { folder ->
+                            val folderApps = (sourceRv.adapter as? AppsAdapter)?.items?.filterIsInstance<ResolveInfo>()
+                                ?.map { it.activityInfo.packageName } ?: emptyList()
+                            folder.apps.clear()
+                            folder.apps.addAll(folderApps)
+                            
+                            if (folder.apps.isEmpty()) {
+                                mainActivity.dismissFolderOverlay()
+                                val folderIdx = mainActivity.items.indexOf(folder)
+                                if (folderIdx != -1) {
+                                    mainActivity.items.removeAt(folderIdx)
+                                    mainActivity.appsList.adapter?.notifyItemRemoved(folderIdx)
+                                }
+                            } else {
+                                // Update folder icon in main list
+                                val folderIdx = mainActivity.items.indexOf(folder)
+                                if (folderIdx != -1) {
+                                    mainActivity.appsList.adapter?.notifyItemChanged(folderIdx)
                                 }
                             }
                         }
-                        return true
                     }
-                    return false
+                    mainActivity.saveAppOrder()
+                    return true
                 }
                 DragEvent.ACTION_DRAG_ENDED -> {
                     hideDropCaret(v)

@@ -38,7 +38,7 @@ import kotlin.math.max
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var appsList: RecyclerView
+    internal lateinit var appsList: RecyclerView
     internal var popupMenu: PopupMenu? = null
     internal lateinit var items: MutableList<Any>
 
@@ -47,8 +47,8 @@ class MainActivity : AppCompatActivity() {
     private var startY = 0f
     var longPressedView: View? = null
 
-    private var activeFolder: Folder? = null
-    private var activeFolderAdapter: AppsAdapter? = null
+    internal var activeFolder: Folder? = null
+    internal var activeFolderAdapter: AppsAdapter? = null
     
     private lateinit var folderOverlayContainer: FrameLayout
     private lateinit var folderTitle: TextView
@@ -270,7 +270,7 @@ class MainActivity : AppCompatActivity() {
         onBackPressedDispatcher.addCallback(this, backCallback)
     }
 
-    private fun dismissFolderOverlay() {
+    internal fun dismissFolderOverlay() {
         folderOverlayContainer.visibility = View.GONE
         backCallback.isEnabled = false
         activeFolder = null
