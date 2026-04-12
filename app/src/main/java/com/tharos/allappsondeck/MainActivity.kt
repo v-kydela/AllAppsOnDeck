@@ -51,6 +51,7 @@ class MainActivity : AppCompatActivity() {
     internal var activeFolderAdapter: AppsAdapter? = null
     
     private lateinit var folderOverlayContainer: FrameLayout
+    private lateinit var folderCard: View
     private lateinit var folderTitle: TextView
     private lateinit var folderAppsList: RecyclerView
     private lateinit var folderContent: View
@@ -194,6 +195,7 @@ class MainActivity : AppCompatActivity() {
 
         appsList = findViewById(R.id.apps_list)
         folderOverlayContainer = findViewById(R.id.folder_overlay_container)
+        folderCard = findViewById(R.id.folder_card)
         folderContent = findViewById(R.id.folder_content)
         folderTitle = folderContent.findViewById(R.id.folder_title)
         folderAppsList = folderContent.findViewById(R.id.apps_list)
@@ -260,11 +262,82 @@ class MainActivity : AppCompatActivity() {
         folderOverlayContainer.setOnClickListener {
             dismissFolderOverlay()
         }
-        folderOverlayContainer.setOnDragListener { _, _ -> false }
+        folderOverlayContainer.setOnDragListener { _, event ->
+            when (event.action) {
+                DragEvent.ACTION_DRAG_STARTED -> true
+                DragEvent.ACTION_DRAG_LOCATION -> {
+                    if (activeFolder != null) {
+                        // If dragging outside folder content, dismiss it
+                        val x = event.x
+                        val y = event.y
+                        
+                        // Check if the coordinates are outside folderCard
+                        // folderCard's coordinates are relative to folderOverlayContainer
+                        if (x < folderCard.left || x > folderCard.right ||
+                            y < folderCard.top || y > folderCard.bottom) {
+                            val dragView = event.localState as? View
+                            val sourceRv = dragView?.parent as? RecyclerView
+                            if (sourceRv === folderAppsList) {
+                                // Dragging out of folder: transfer app to main list
+                                val fromPos = folderAppsList.getChildViewHolder(dragView)?.bindingAdapterPosition ?: -1
+                                if (fromPos != -1) {
+                                    val item = activeFolderAdapter?.items?.get(fromPos) as? ResolveInfo
+                                    if (item != null) {
+                                        activeFolderAdapter?.items?.removeAt(fromPos)
+                                        folderAppsList.adapter?.notifyItemRemoved(fromPos)
+
+                                        // Insert into main list at a sensible position (e.g. after folder)
+                                        val folderIdx = items.indexOf(activeFolder!!)
+                                        val insertPos = if (folderIdx != -1) folderIdx + 1 else items.size
+                                        items.add(insertPos, item)
+                                        appsList.adapter?.notifyItemInserted(insertPos)
+
+                                        // Sync folder state
+                                        activeFolder?.apps?.remove(item.activityInfo.packageName)
+                                        if (activeFolder?.apps?.isEmpty() == true) {
+                                            items.remove(activeFolder!!)
+                                            if (folderIdx != -1) {
+                                                appsList.adapter?.notifyItemRemoved(folderIdx)
+                                            }
+                                        } else {
+                                            if (folderIdx != -1) {
+                                                appsList.adapter?.notifyItemChanged(folderIdx)
+                                            }
+                                        }
+
+                                        dismissFolderOverlay()
+                                        // Once dismissed, we want the drag to continue in the main list
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    true
+                }
+                DragEvent.ACTION_DROP -> {
+                    // This handles cases where the user drops directly on the dimmed background
+                    true
+                }
+                else -> false
+            }
+        }
 
         // Shield the folder content area so drops on title/padding do nothing
-        folderContent.setOnDragListener { _, _ ->
-            false // Do not consume
+        folderContent.setOnDragListener { _, event ->
+            when (event.action) {
+                DragEvent.ACTION_DRAG_STARTED -> true
+                DragEvent.ACTION_DRAG_LOCATION -> false // Bubble to container for tear-off
+                DragEvent.ACTION_DROP -> true // Consume drop
+                else -> false
+            }
+        }
+
+        folderAppsList.setOnDragListener { _, event ->
+            when (event.action) {
+                DragEvent.ACTION_DRAG_STARTED -> true
+                DragEvent.ACTION_DRAG_LOCATION -> false // Bubble to container for tear-off
+                else -> false
+            }
         }
 
         onBackPressedDispatcher.addCallback(this, backCallback)
@@ -743,11 +816,16 @@ class MainActivity : AppCompatActivity() {
                 dismissFolderOverlay()
             }
         } else if (activeFolder == folder) {
-            val apps = getInstalledLauncherApps()
-            val folderAppsResolved =
-                apps.filter { folder.apps.contains(it.activityInfo.packageName) }
-            activeFolderAdapter?.updateItems(ArrayList(folderAppsResolved))
-            
+            // Sync internal list of activeFolderAdapter
+            val adapterItems = activeFolderAdapter?.items
+            if (adapterItems != null) {
+                val itemIdx = adapterItems.indexOf(app)
+                if (itemIdx != -1) {
+                    adapterItems.removeAt(itemIdx)
+                    activeFolderAdapter?.notifyItemRemoved(itemIdx)
+                }
+            }
+
             // Notify main list that folder icon changed
             if (folderIndex != -1) {
                 appsList.adapter?.notifyItemChanged(folderIndex)

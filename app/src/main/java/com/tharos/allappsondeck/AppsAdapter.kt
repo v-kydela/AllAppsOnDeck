@@ -162,7 +162,6 @@ class AppsAdapter(
         abstract fun createPopupMenu()
 
         override fun onDrag(v: View, event: DragEvent): Boolean {
-            if (isFolderAdapter) return false
             val toPosition = bindingAdapterPosition
             if (toPosition == RecyclerView.NO_POSITION) return false
 
@@ -188,7 +187,7 @@ class AppsAdapter(
                             caret.requestLayout()
                         }
                     }
-                    return true
+                    return true // Always interested so cross-list drags work
                 }
                 DragEvent.ACTION_DRAG_ENTERED -> {
                     updateDropCaret(v, event, canDropInMiddle)
@@ -204,14 +203,14 @@ class AppsAdapter(
                 }
                 DragEvent.ACTION_DROP -> {
                     hideDropCaret(v)
-                    val dragView = event.localState as? View ?: return false
-                    val sourceRv = dragView.parent as? RecyclerView ?: return false
-                    val targetRv = v.parent as? RecyclerView ?: return false
+                    val dragView = event.localState as? View ?: return true
+                    val sourceRv = dragView.parent as? RecyclerView ?: return true
+                    val targetRv = v.parent as? RecyclerView ?: return true
 
                     val fromPosition = sourceRv.getChildViewHolder(dragView)?.bindingAdapterPosition ?: -1
-                    if (fromPosition == -1) return false
+                    if (fromPosition == -1) return true
 
-                    val movedItem = (sourceRv.adapter as? AppsAdapter)?.items?.removeAt(fromPosition) ?: return false
+                    val movedItem = (sourceRv.adapter as? AppsAdapter)?.items?.removeAt(fromPosition) ?: return true
 
                     if (sourceRv === targetRv) {
                         val finalPosition = calculateDropPosition(fromPosition, toPosition, event.x, v.width)
@@ -311,7 +310,7 @@ class AppsAdapter(
                     }
                     return true
                 }
-                else -> return false
+                else -> return true
             }
         }
 
