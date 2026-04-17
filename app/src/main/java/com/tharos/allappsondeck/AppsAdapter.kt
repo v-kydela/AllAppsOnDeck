@@ -187,7 +187,6 @@ class AppsAdapter(
                     hideDropCaret(v)
                     val dragView = event.localState as? View
                     val sourceRecyclerView = dragView?.parent as? RecyclerView
-                    val sourceAdapter = sourceRecyclerView?.adapter as? AppsAdapter
 
                     val fromPosition = if (sourceRecyclerView == v.parent) {
                         sourceRecyclerView.getChildViewHolder(dragView)?.bindingAdapterPosition ?: -1
@@ -227,16 +226,6 @@ class AppsAdapter(
                             }
                         }
                         return true
-                    } else if (sourceAdapter?.isFolderAdapter == true && !isFolderAdapter) {
-                        // Dragging from folder to main list item
-                        val pos = sourceRecyclerView.getChildViewHolder(dragView)?.bindingAdapterPosition
-                        if (pos != null && pos != RecyclerView.NO_POSITION) {
-                            val item = sourceAdapter.items[pos]
-                            if (item is ResolveInfo) {
-                                mainActivity.removeAppFromFolder(item)
-                                return true
-                            }
-                        }
                     }
                     return false
                 }
