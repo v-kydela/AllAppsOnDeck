@@ -33,6 +33,11 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -50,6 +55,14 @@ class MainActivity : AppCompatActivity() {
     private var activeFolder: Folder? = null
     private var activeFolderAdapter: AppsAdapter? = null
     private var activeFolderDialog: AlertDialog? = null
+
+    private var refreshJob: Job? = null
+    
+    // Cache for intent-based apps to avoid expensive IPC
+    private var browserApps = setOf<String>()
+    private var emailApps = setOf<String>()
+    private var dialerApps = setOf<String>()
+    private val categoryCache = mutableMapOf<String, List<String>>()
 
     @SuppressLint("ClickableViewAccessibility")
     val appTouchListener = View.OnTouchListener { v, event ->
@@ -242,13 +255,33 @@ class MainActivity : AppCompatActivity() {
         settingsResultLauncher.launch(intent)
     }
 
+    private fun prefetchCategorySets() {
+        browserApps = packageManager.queryIntentActivities(
+            Intent(Intent.ACTION_VIEW, "http://google.com".toUri()).addCategory(Intent.CATEGORY_BROWSABLE),
+            PackageManager.MATCH_DEFAULT_ONLY
+        ).map { it.activityInfo.packageName }.toSet()
+
+        emailApps = packageManager.queryIntentActivities(
+            Intent(Intent.ACTION_VIEW, "mailto:".toUri()),
+            PackageManager.MATCH_DEFAULT_ONLY
+        ).map { it.activityInfo.packageName }.toSet()
+
+        dialerApps = packageManager.queryIntentActivities(
+            Intent(Intent.ACTION_VIEW, "tel:".toUri()),
+            PackageManager.MATCH_DEFAULT_ONLY
+        ).map { it.activityInfo.packageName }.toSet()
+        
+        categoryCache.clear()
+    }
+
     private fun getAppCategories(packageName: String): List<String> {
+        categoryCache[packageName]?.let { return it }
+        
         val categories = mutableListOf<String>()
         try {
             val appInfo = packageManager.getApplicationInfo(packageName, 0)
-            val label = appInfo.loadLabel(packageManager).toString().lowercase()
-
-            // 1. Built-in Category
+            
+            // 1. Built-in Category (Fast)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val builtin = when (appInfo.category) {
                     ApplicationInfo.CATEGORY_GAME -> "Games"
@@ -265,12 +298,8 @@ class MainActivity : AppCompatActivity() {
                 builtin?.let { categories.add(it) }
             }
 
-            // 2. Intent-Based Categorization
-            if (isAppForIntent(packageName, Intent(Intent.ACTION_VIEW, "mailto:".toUri()))) categories.add("Communication")
-            if (isAppForIntent(packageName, Intent(Intent.ACTION_VIEW, "tel:".toUri()))) categories.add("Communication")
-            if (isAppForIntent(packageName, Intent(Intent.ACTION_VIEW, "http://google.com".toUri()).addCategory(Intent.CATEGORY_BROWSABLE))) categories.add("Browsers")
-
-            // 3. Keyword-Based Heuristics
+            // 2. Keyword-Based Heuristics (Fastest)
+            val label = appInfo.loadLabel(packageManager).toString().lowercase()
             if (label.containsAny("bank", "pay", "wallet", "finance", "credit", "crypto", "invest", "stock")) categories.add("Finance")
             if (label.containsAny("flight", "airline", "hotel", "booking", "travel", "expedia", "airbnb", "trip")) categories.add("Travel")
             if (label.containsAny("taxi", "ride", "uber", "lyft", "grab", "transit", "train", "bus", "metro")) categories.add("Transit")
@@ -280,24 +309,28 @@ class MainActivity : AppCompatActivity() {
             if (label.containsAny("office", "doc", "sheet", "slide", "pdf", "note", "keep", "word", "excel", "ppt")) categories.add("Productivity")
             if (label.containsAny("photo", "gallery", "camera", "editor", "video", "player", "music", "stream")) categories.add("Media")
 
-            // 4. Publisher Check
+            // 3. Publisher Check (Fast)
             if (packageName.startsWith("com.google.android") || packageName.startsWith("com.google.android.apps")) categories.add("Google")
             if (packageName.startsWith("com.microsoft.")) categories.add("Microsoft")
             if (packageName.startsWith("com.sec.android") || packageName.startsWith("com.samsung.")) categories.add("Samsung")
 
+            // 4. Pre-fetched Intent Categorization (Fast - avoided expensive IPC)
+            if (categories.size < 2) {
+                if (emailApps.contains(packageName)) categories.add("Communication")
+                if (dialerApps.contains(packageName)) categories.add("Communication")
+                if (browserApps.contains(packageName)) categories.add("Browsers")
+            }
+
         } catch (_: Exception) {
             // App might have been uninstalled
         }
-        return categories.distinct()
+        val result = categories.distinct()
+        categoryCache[packageName] = result
+        return result
     }
 
     private fun String.containsAny(vararg keywords: String): Boolean {
         return keywords.any { this.contains(it, ignoreCase = true) }
-    }
-
-    private fun isAppForIntent(packageName: String, intent: Intent): Boolean {
-        val resolveInfos = packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
-        return resolveInfos.any { it.activityInfo.packageName == packageName }
     }
 
     internal fun getFolderNameForApps(packageNames: List<String>): String {
@@ -316,98 +349,101 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("NotifyDataSetChanged")
     internal fun autoOrganizeApps() {
-        val actionItem = items.find { it is GlobalActionItem }
-        val apps = getInstalledLauncherApps()
-
-        // 1. Get all categories for all apps
-        val appToCategories = apps.associateWith { getAppCategories(it.activityInfo.packageName) }
-
-        // 2. Count potential members for each category
-        val potentialCounts = mutableMapOf<String, Int>()
-        appToCategories.values.flatten().forEach {
-            potentialCounts[it] = (potentialCounts[it] ?: 0) + 1
-        }
-
-        // 3. Keep only categories that have at least 2 potential members
-        val validCategories = potentialCounts.filter { it.value > 1 }.keys.toList()
-
-        // 4. Initial Assignment: Least flexible apps (fewer category options) first
-        val sortedApps = apps.sortedBy { app -> appToCategories[app]?.count { it in validCategories } ?: 0 }
-        val assignments = mutableMapOf<String, MutableList<ResolveInfo>>()
-        val unassignedApps = mutableListOf<ResolveInfo>()
-
-        for (app in sortedApps) {
-            val appCats = appToCategories[app]?.filter { it in validCategories } ?: emptyList()
-            if (appCats.isEmpty()) {
-                unassignedApps.add(app)
-            } else {
-                // Pick the category with the current SMALLEST assignment count for evenness
-                val bestCat = appCats.minByOrNull { assignments[it]?.size ?: 0 }!!
-                assignments.getOrPut(bestCat) { mutableListOf() }.add(app)
-            }
-        }
-
-        // 5. Global Balancing: Iteratively swap apps from the largest folders to the smallest ones
-        var changed: Boolean
-        var safetyCounter = 0
-        val maxIterations = apps.size * 2 // Mathematical guarantee of convergence, but adding safety valve
-        
-        do {
-            changed = false
-            safetyCounter++
+        lifecycleScope.launch {
+            val actionItem = items.find { it is GlobalActionItem }
             
-            // Find folders sorted by size (descending)
-            val fromCats = assignments.keys.sortedByDescending { assignments[it]?.size ?: 0 }
-            for (fromCat in fromCats) {
-                val fromApps = assignments[fromCat] ?: continue
-                if (fromApps.size <= 2) continue // Don't shrink already small folders
+            // Move heavy computation to Default dispatcher
+            val result = withContext(Dispatchers.Default) {
+                prefetchCategorySets()
+                val apps = getInstalledLauncherApps()
 
-                // Find folders sorted by size (ascending)
-                val toCats = validCategories.sortedBy { assignments[it]?.size ?: 0 }
-                for (toCat in toCats) {
-                    if (fromCat == toCat) continue
-                    val toAppsSize = assignments[toCat]?.size ?: 0
-                    
-                    // Convergence condition: Move only if it makes the distribution strictly more even
-                    if (fromApps.size > toAppsSize + 1) {
-                        val movableApp = fromApps.find { app -> appToCategories[app]?.contains(toCat) == true }
-                        if (movableApp != null) {
-                            fromApps.remove(movableApp)
-                            assignments.getOrPut(toCat) { mutableListOf() }.add(movableApp)
-                            changed = true
-                            break
-                        }
+                // 1. Get all categories for all apps
+                val appToCategories = apps.associateWith { getAppCategories(it.activityInfo.packageName) }
+
+                // 2. Count potential members for each category
+                val potentialCounts = mutableMapOf<String, Int>()
+                appToCategories.values.flatten().forEach {
+                    potentialCounts[it] = (potentialCounts[it] ?: 0) + 1
+                }
+
+                // 3. Keep only categories that have at least 2 potential members
+                val validCategories = potentialCounts.filter { it.value > 1 }.keys.toList()
+
+                // 4. Initial Assignment: Least flexible apps first
+                val sortedApps = apps.sortedBy { app -> appToCategories[app]?.count { it in validCategories } ?: 0 }
+                val assignments = mutableMapOf<String, MutableList<ResolveInfo>>()
+                val unassignedApps = mutableListOf<ResolveInfo>()
+
+                for (app in sortedApps) {
+                    val appCats = appToCategories[app]?.filter { it in validCategories } ?: emptyList()
+                    if (appCats.isEmpty()) {
+                        unassignedApps.add(app)
+                    } else {
+                        val bestCat = appCats.minByOrNull { assignments[it]?.size ?: 0 }!!
+                        assignments.getOrPut(bestCat) { mutableListOf() }.add(app)
                     }
                 }
-                if (changed) break
+
+                // 5. Global Balancing logic (already optimized, but runs off-thread now)
+                var changed: Boolean
+                var safetyCounter = 0
+                val maxIterations = apps.size * 2
+                
+                do {
+                    changed = false
+                    safetyCounter++
+                    val fromCats = assignments.keys.sortedByDescending { assignments[it]?.size ?: 0 }
+                    for (fromCat in fromCats) {
+                        val fromApps = assignments[fromCat] ?: continue
+                        if (fromApps.size <= 2) continue
+                        val toCats = validCategories.sortedBy { assignments[it]?.size ?: 0 }
+                        for (toCat in toCats) {
+                            if (fromCat == toCat) continue
+                            val toAppsSize = assignments[toCat]?.size ?: 0
+                            if (fromApps.size > toAppsSize + 1) {
+                                val movableApp = fromApps.find { app -> appToCategories[app]?.contains(toCat) == true }
+                                if (movableApp != null) {
+                                    fromApps.remove(movableApp)
+                                    assignments.getOrPut(toCat) { mutableListOf() }.add(movableApp)
+                                    changed = true
+                                    break
+                                }
+                            }
+                        }
+                        if (changed) break
+                    }
+                } while (changed && safetyCounter < maxIterations)
+                
+                Triple(assignments, unassignedApps, validCategories)
             }
-        } while (changed && safetyCounter < maxIterations)
 
-        // 6. Build new items list
-        val newItems = mutableListOf<Any>()
-        if (actionItem != null) {
-            newItems.add(actionItem)
-        }
+            val assignments = result.first
+            val unassignedApps = result.second
 
-        // Add folders that ended up with > 1 app
-        assignments.keys.sorted().forEach { category ->
-            val groupApps = assignments[category] ?: return@forEach
-            if (groupApps.size > 1) {
-                val packageNames = groupApps.map { it.activityInfo.packageName }.toMutableList()
-                newItems.add(Folder(category, packageNames))
-            } else {
-                unassignedApps.addAll(groupApps)
+            // 6. Build new items list on Main thread
+            val newItems = mutableListOf<Any>()
+            if (actionItem != null) {
+                newItems.add(actionItem)
             }
+
+            assignments.keys.sorted().forEach { category ->
+                val groupApps = assignments[category] ?: return@forEach
+                if (groupApps.size > 1) {
+                    val packageNames = groupApps.map { it.activityInfo.packageName }.toMutableList()
+                    newItems.add(Folder(category, packageNames))
+                } else {
+                    unassignedApps.addAll(groupApps)
+                }
+            }
+
+            newItems.addAll(unassignedApps.sortedBy { it.loadLabel(packageManager).toString().lowercase() })
+
+            items.clear()
+            items.addAll(newItems)
+            appsList.adapter?.notifyDataSetChanged()
+            withContext(Dispatchers.IO) { saveAppOrder() }
+            Toast.makeText(this@MainActivity, "Apps organized into folders", Toast.LENGTH_SHORT).show()
         }
-
-        // Add single apps
-        newItems.addAll(unassignedApps.sortedBy { it.loadLabel(packageManager).toString().lowercase() })
-
-        items.clear()
-        items.addAll(newItems)
-        appsList.adapter?.notifyDataSetChanged()
-        saveAppOrder()
-        Toast.makeText(this, "Apps organized into folders", Toast.LENGTH_SHORT).show()
     }
 
     override fun onDestroy() {
@@ -423,95 +459,101 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("NotifyDataSetChanged")
     fun refreshApps() {
-        val apps = getInstalledLauncherApps()
-        val appMap = apps.associateBy { it.activityInfo.packageName }
+        refreshJob?.cancel()
+        refreshJob = lifecycleScope.launch {
+            val (apps, appMap) = withContext(Dispatchers.IO) {
+                prefetchCategorySets()
+                val installed = getInstalledLauncherApps()
+                installed to installed.associateBy { it.activityInfo.packageName }
+            }
 
-        if (!::items.isInitialized) {
-            items = mutableListOf()
-            loadAppLayout(apps, appMap)
-        } else {
-            // Update items list while maintaining existing items (folders and ordered apps)
-            val currentPackages = mutableSetOf<String>()
-            val newItems = mutableListOf<Any>()
-            val hasActionItem = items.any { it is GlobalActionItem }
+            if (!::items.isInitialized) {
+                items = mutableListOf()
+                withContext(Dispatchers.IO) { loadAppLayout(apps, appMap) }
+            } else {
+                // Update items list while maintaining existing items (folders and ordered apps)
+                val currentPackages = mutableSetOf<String>()
+                val newItems = mutableListOf<Any>()
+                val hasActionItem = items.any { it is GlobalActionItem }
 
-            // First, keep existing items that are still installed
-            for (item in items) {
-                if (item is Folder) {
-                    item.apps.removeAll { !appMap.containsKey(it) }
-                    if (item.apps.isNotEmpty()) {
+                // First, keep existing items that are still installed
+                for (item in items) {
+                    if (item is Folder) {
+                        item.apps.removeAll { !appMap.containsKey(it) }
+                        if (item.apps.isNotEmpty()) {
+                            newItems.add(item)
+                            currentPackages.addAll(item.apps)
+                        }
+                    } else if (item is ResolveInfo) {
+                        val pkg = item.activityInfo.packageName
+                        if (appMap.containsKey(pkg)) {
+                            newItems.add(appMap[pkg]!!)
+                            currentPackages.add(pkg)
+                        }
+                    } else if (item is GlobalActionItem) {
                         newItems.add(item)
-                        currentPackages.addAll(item.apps)
                     }
-                } else if (item is ResolveInfo) {
-                    val pkg = item.activityInfo.packageName
-                    if (appMap.containsKey(pkg)) {
-                        newItems.add(appMap[pkg]!!)
-                        currentPackages.add(pkg)
-                    }
-                } else if (item is GlobalActionItem) {
-                    newItems.add(item)
                 }
-            }
-            if (!hasActionItem) {
-                newItems.add(0, GlobalActionItem)
-            }
-
-            // Then, add any new apps that weren't in the list
-            val newApps = apps.filter { !currentPackages.contains(it.activityInfo.packageName) }
-            if (newApps.isNotEmpty()) {
-                // Find first non-folder, non-action item position to insert new apps
-                var insertIndex = newItems.indexOfFirst { it is ResolveInfo }
-                if (insertIndex == -1) { // If no apps, add at the end
-                    insertIndex = newItems.size
+                if (!hasActionItem) {
+                    newItems.add(0, GlobalActionItem)
                 }
 
-                for (app in newApps) {
-                    val appCategories = getAppCategories(app.activityInfo.packageName)
-                    var addedToFolder = false
+                // Then, add any new apps that weren't in the list
+                val newApps = apps.filter { !currentPackages.contains(it.activityInfo.packageName) }
+                if (newApps.isNotEmpty()) {
+                    // Find first non-folder, non-action item position to insert new apps
+                    var insertIndex = newItems.indexOfFirst { it is ResolveInfo }
+                    if (insertIndex == -1) { // If no apps, add at the end
+                        insertIndex = newItems.size
+                    }
 
-                    if (appCategories.isNotEmpty()) {
-                        // Find all existing folders that match any of the app's categories
-                        val candidateFolders = newItems.filterIsInstance<Folder>().filter { folder ->
-                            appCategories.any { it.equals(folder.name, ignoreCase = true) }
+                    for (app in newApps) {
+                        val appCategories = withContext(Dispatchers.IO) { getAppCategories(app.activityInfo.packageName) }
+                        var addedToFolder = false
+
+                        if (appCategories.isNotEmpty()) {
+                            // Find all existing folders that match any of the app's categories
+                            val candidateFolders = newItems.filterIsInstance<Folder>().filter { folder ->
+                                appCategories.any { it.equals(folder.name, ignoreCase = true) }
+                            }
+
+                            if (candidateFolders.isNotEmpty()) {
+                                // Pick the smallest folder to keep them even
+                                val targetFolder = candidateFolders.minByOrNull { it.apps.size }
+                                targetFolder?.apps?.add(app.activityInfo.packageName)
+                                addedToFolder = true
+                            }
                         }
 
-                        if (candidateFolders.isNotEmpty()) {
-                            // Pick the smallest folder to keep them even
-                            val targetFolder = candidateFolders.minByOrNull { it.apps.size }
-                            targetFolder?.apps?.add(app.activityInfo.packageName)
-                            addedToFolder = true
+                        if (!addedToFolder) {
+                            newItems.add(insertIndex, app)
+                            insertIndex++
                         }
                     }
+                }
 
-                    if (!addedToFolder) {
-                        newItems.add(insertIndex, app)
-                        insertIndex++
-                    }
+                items.clear()
+                items.addAll(newItems)
+            }
+
+            if (appsList.adapter == null) {
+                appsList.adapter = AppsAdapter(this@MainActivity, items)
+            } else {
+                appsList.adapter?.notifyDataSetChanged()
+            }
+
+            // Update active folder if it exists
+            activeFolder?.let { folder ->
+                val folderAppsResolved =
+                    apps.filter { app -> folder.apps.contains(app.activityInfo.packageName) }
+                activeFolderAdapter?.updateItems(ArrayList(folderAppsResolved))
+                if (folder.apps.isEmpty()) {
+                    activeFolderDialog?.dismiss()
                 }
             }
 
-            items.clear()
-            items.addAll(newItems)
+            withContext(Dispatchers.IO) { saveAppOrder() }
         }
-
-        if (appsList.adapter == null) {
-            appsList.adapter = AppsAdapter(this, items)
-        } else {
-            appsList.adapter?.notifyDataSetChanged()
-        }
-
-        // Update active folder if it exists
-        activeFolder?.let { folder ->
-            val folderAppsResolved =
-                apps.filter { app -> folder.apps.contains(app.activityInfo.packageName) }
-            activeFolderAdapter?.updateItems(ArrayList(folderAppsResolved))
-            if (folder.apps.isEmpty()) {
-                activeFolderDialog?.dismiss()
-            }
-        }
-
-        saveAppOrder()
     }
 
     private fun loadAppLayout(allApps: List<ResolveInfo>, appMap: Map<String, ResolveInfo>) {
