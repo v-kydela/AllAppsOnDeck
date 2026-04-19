@@ -2,6 +2,8 @@ package com.tharos.allappsondeck
 
 import android.annotation.SuppressLint
 import android.app.AlertDialog
+import android.graphics.drawable.Drawable
+import java.util.concurrent.ConcurrentHashMap
 import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipDescription
@@ -59,6 +61,9 @@ class MainActivity : AppCompatActivity() {
     private var refreshJob: Job? = null
     
     // Cache for intent-based apps to avoid expensive IPC
+    internal var cachedApps: Map<String, ResolveInfo> = emptyMap()
+    internal val iconCache = ConcurrentHashMap<String, Drawable>()
+    internal val labelCache = ConcurrentHashMap<String, String>()
     private var browserApps = setOf<String>()
     private var emailApps = setOf<String>()
     private var dialerApps = setOf<String>()
@@ -464,8 +469,27 @@ class MainActivity : AppCompatActivity() {
             val (apps, appMap) = withContext(Dispatchers.IO) {
                 prefetchCategorySets()
                 val installed = getInstalledLauncherApps()
-                installed to installed.associateBy { it.activityInfo.packageName }
+                val newAppMap = installed.associateBy { it.activityInfo.packageName }
+
+                // Pre-warm the icon and label cache on a background thread
+                installed.forEach { app ->
+                    val pkg = app.activityInfo.packageName
+                    if (!iconCache.containsKey(pkg)) {
+                        iconCache[pkg] = app.loadIcon(packageManager)
+                    }
+                    if (!labelCache.containsKey(pkg)) {
+                        labelCache[pkg] = app.loadLabel(packageManager).toString()
+                    }
+                }
+
+                // Clean up old entries for uninstalled apps
+                val installedPackages = newAppMap.keys
+                iconCache.keys.retainAll(installedPackages)
+                labelCache.keys.retainAll(installedPackages)
+
+                installed to newAppMap
             }
+            cachedApps = appMap
 
             if (!::items.isInitialized) {
                 items = mutableListOf()
@@ -644,11 +668,7 @@ class MainActivity : AppCompatActivity() {
 
         val dialog = AlertDialog.Builder(this).setView(dialogView).create()
 
-        val mainIntent = Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER)
-        val allApps = packageManager.queryIntentActivities(mainIntent, 0)
-        val folderAppsResolved =
-            allApps.filter { app -> folder.apps.contains(app.activityInfo.packageName) }
-                .toMutableList()
+        val folderAppsResolved = folder.apps.mapNotNull { cachedApps[it] }.toMutableList()
 
         val adapter = AppsAdapter(this, ArrayList(folderAppsResolved), true)
         folderAppsList.adapter = adapter
@@ -688,11 +708,7 @@ class MainActivity : AppCompatActivity() {
         val folderIndex = items.indexOf(folder)
         if (folderIndex == -1) return
 
-        val mainIntent = Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER)
-        val allApps = packageManager.queryIntentActivities(mainIntent, 0)
-        val appMap = allApps.associateBy { it.activityInfo.packageName }
-
-        val appsFromFolder = folder.apps.mapNotNull { appMap[it] }
+        val appsFromFolder = folder.apps.mapNotNull { cachedApps[it] }
 
         items.removeAt(folderIndex)
         items.addAll(folderIndex, appsFromFolder) // Insert apps at the folder's previous position
@@ -714,16 +730,12 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val mainIntent = Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER)
-        val allApps = packageManager.queryIntentActivities(mainIntent, 0)
-        val appMap = allApps.associateBy { it.activityInfo.packageName }
-
         val newItems = items.toMutableList()
         var appsAdded = 0
         for (folder in folders) {
             val folderIndex = newItems.indexOf(folder)
             if (folderIndex != -1) {
-                val appsFromFolder = folder.apps.mapNotNull { appMap[it] }
+                val appsFromFolder = folder.apps.mapNotNull { cachedApps[it] }
                 newItems.removeAt(folderIndex)
                 newItems.addAll(folderIndex, appsFromFolder)
                 appsAdded += appsFromFolder.size
@@ -771,9 +783,7 @@ class MainActivity : AppCompatActivity() {
                 activeFolderDialog?.dismiss()
             }
         } else if (activeFolder == folder) {
-            val apps = getInstalledLauncherApps()
-            val folderAppsResolved =
-                apps.filter { folder.apps.contains(it.activityInfo.packageName) }
+            val folderAppsResolved = folder.apps.mapNotNull { cachedApps[it] }
             activeFolderAdapter?.updateItems(ArrayList(folderAppsResolved))
             
             // Notify main list that folder icon changed

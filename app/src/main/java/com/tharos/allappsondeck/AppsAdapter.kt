@@ -475,17 +475,20 @@ class AppsAdapter(
         when (holder) {
             is AppViewHolder -> {
                 val app = items[position] as ResolveInfo
-                val appName = app.loadLabel(mainActivity.packageManager)
+                val pkg = app.activityInfo.packageName
+                
+                val appName = mainActivity.labelCache[pkg] ?: app.loadLabel(mainActivity.packageManager)
                 holder.appName.text = appName
                 holder.appIcon.contentDescription = appName
-                val icon = app.loadIcon(mainActivity.packageManager)
+                
+                val icon = mainActivity.iconCache[pkg] ?: app.loadIcon(mainActivity.packageManager)
                 holder.appIcon.setImageDrawable(icon)
             }
             is FolderViewHolder -> {
                 val folder = items[position] as Folder
                 holder.folderName.text = folder.name
                 val folderIcons = folder.apps.take(4).mapNotNull { packageName ->
-                    try {
+                    mainActivity.iconCache[packageName] ?: try {
                         mainActivity.packageManager.getApplicationIcon(packageName)
                     } catch (_: Exception) {
                         null
