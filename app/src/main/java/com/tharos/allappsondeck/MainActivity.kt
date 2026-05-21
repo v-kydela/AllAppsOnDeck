@@ -67,7 +67,8 @@ class MainActivity : AppCompatActivity() {
     private var browserApps = setOf<String>()
     private var emailApps = setOf<String>()
     private var dialerApps = setOf<String>()
-    private val categoryCache = mutableMapOf<String, List<String>>()
+    private val categoryCache = ConcurrentHashMap<String, List<String>>()
+    private var isCategorySetsPrefetched = false
 
     @SuppressLint("ClickableViewAccessibility")
     val appTouchListener = View.OnTouchListener { v, event ->
@@ -189,6 +190,7 @@ class MainActivity : AppCompatActivity() {
         private const val PREFS_NAME = "AppOrder"
         private const val LAYOUT_KEY = "app_layout_v5" // Upgraded key to include global action item
         private const val ACTION_ITEM_KEY = "G:ACTION"
+        private const val CATEGORY_CACHE_PREFS = "CategoryCache"
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -260,6 +262,12 @@ class MainActivity : AppCompatActivity() {
         settingsResultLauncher.launch(intent)
     }
 
+    private fun ensureCategorySetsPrefetched() {
+        if (isCategorySetsPrefetched) return
+        prefetchCategorySets()
+        isCategorySetsPrefetched = true
+    }
+
     private fun prefetchCategorySets() {
         browserApps = packageManager.queryIntentActivities(
             Intent(Intent.ACTION_VIEW, "http://google.com".toUri()).addCategory(Intent.CATEGORY_BROWSABLE),
@@ -275,18 +283,24 @@ class MainActivity : AppCompatActivity() {
             Intent(Intent.ACTION_VIEW, "tel:".toUri()),
             PackageManager.MATCH_DEFAULT_ONLY
         ).map { it.activityInfo.packageName }.toSet()
-        
-        categoryCache.clear()
     }
 
     private fun getAppCategories(packageName: String): List<String> {
         categoryCache[packageName]?.let { return it }
         
+        // 1. Try persistent cache
+        val prefs = getSharedPreferences(CATEGORY_CACHE_PREFS, MODE_PRIVATE)
+        prefs.getString(packageName, null)?.let { cached ->
+            val list = cached.split("|").filter { it.isNotEmpty() }
+            categoryCache[packageName] = list
+            return list
+        }
+
         val categories = mutableListOf<String>()
         try {
             val appInfo = packageManager.getApplicationInfo(packageName, 0)
             
-            // 1. Built-in Category (Fast)
+            // 2. Built-in Category (Fast)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val builtin = when (appInfo.category) {
                     ApplicationInfo.CATEGORY_GAME -> "Games"
@@ -303,7 +317,7 @@ class MainActivity : AppCompatActivity() {
                 builtin?.let { categories.add(it) }
             }
 
-            // 2. Keyword-Based Heuristics (Fastest)
+            // 3. Keyword-Based Heuristics (Fastest)
             val label = appInfo.loadLabel(packageManager).toString().lowercase()
             if (label.containsAny("bank", "pay", "wallet", "finance", "credit", "crypto", "invest", "stock")) categories.add("Finance")
             if (label.containsAny("flight", "airline", "hotel", "booking", "travel", "expedia", "airbnb", "trip")) categories.add("Travel")
@@ -314,13 +328,14 @@ class MainActivity : AppCompatActivity() {
             if (label.containsAny("office", "doc", "sheet", "slide", "pdf", "note", "keep", "word", "excel", "ppt")) categories.add("Productivity")
             if (label.containsAny("photo", "gallery", "camera", "editor", "video", "player", "music", "stream")) categories.add("Media")
 
-            // 3. Publisher Check (Fast)
+            // 4. Publisher Check (Fast)
             if (packageName.startsWith("com.google.android") || packageName.startsWith("com.google.android.apps")) categories.add("Google")
             if (packageName.startsWith("com.microsoft.")) categories.add("Microsoft")
             if (packageName.startsWith("com.sec.android") || packageName.startsWith("com.samsung.")) categories.add("Samsung")
 
-            // 4. Pre-fetched Intent Categorization (Fast - avoided expensive IPC)
+            // 5. Pre-fetched Intent Categorization (Fast - avoided expensive IPC)
             if (categories.size < 2) {
+                ensureCategorySetsPrefetched()
                 if (emailApps.contains(packageName)) categories.add("Communication")
                 if (dialerApps.contains(packageName)) categories.add("Communication")
                 if (browserApps.contains(packageName)) categories.add("Browsers")
@@ -331,6 +346,7 @@ class MainActivity : AppCompatActivity() {
         }
         val result = categories.distinct()
         categoryCache[packageName] = result
+        prefs.edit { putString(packageName, result.joinToString("|")) }
         return result
     }
 
@@ -359,7 +375,7 @@ class MainActivity : AppCompatActivity() {
             
             // Move heavy computation to Default dispatcher
             val result = withContext(Dispatchers.Default) {
-                prefetchCategorySets()
+                ensureCategorySetsPrefetched()
                 val apps = getInstalledLauncherApps()
 
                 // 1. Get all categories for all apps
@@ -467,20 +483,8 @@ class MainActivity : AppCompatActivity() {
         refreshJob?.cancel()
         refreshJob = lifecycleScope.launch {
             val (apps, appMap) = withContext(Dispatchers.IO) {
-                prefetchCategorySets()
                 val installed = getInstalledLauncherApps()
                 val newAppMap = installed.associateBy { it.activityInfo.packageName }
-
-                // Pre-warm the icon and label cache on a background thread
-                installed.forEach { app ->
-                    val pkg = app.activityInfo.packageName
-                    if (!iconCache.containsKey(pkg)) {
-                        iconCache[pkg] = app.loadIcon(packageManager)
-                    }
-                    if (!labelCache.containsKey(pkg)) {
-                        labelCache[pkg] = app.loadLabel(packageManager).toString()
-                    }
-                }
 
                 // Clean up old entries for uninstalled apps
                 val installedPackages = newAppMap.keys
@@ -564,6 +568,23 @@ class MainActivity : AppCompatActivity() {
                 appsList.adapter = AppsAdapter(this@MainActivity, items)
             } else {
                 appsList.adapter?.notifyDataSetChanged()
+            }
+
+            // Background pre-warming (Icons & Labels) - DO NOT WAIT for this in the main refresh flow
+            lifecycleScope.launch(Dispatchers.IO) {
+                apps.forEach { app ->
+                    val pkg = app.activityInfo.packageName
+                    if (!iconCache.containsKey(pkg)) {
+                        iconCache[pkg] = app.loadIcon(packageManager)
+                    }
+                    if (!labelCache.containsKey(pkg)) {
+                        labelCache[pkg] = app.loadLabel(packageManager).toString()
+                    }
+                }
+                withContext(Dispatchers.Main) {
+                    appsList.adapter?.notifyDataSetChanged()
+                    activeFolderAdapter?.notifyDataSetChanged()
+                }
             }
 
             // Update active folder if it exists
