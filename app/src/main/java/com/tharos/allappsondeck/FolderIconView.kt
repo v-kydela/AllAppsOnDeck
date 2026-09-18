@@ -22,7 +22,10 @@ class FolderIconView @JvmOverloads constructor(
 
     fun setIcons(newIcons: List<Drawable>) {
         icons.clear()
-        icons.addAll(newIcons.take(4)) // Show up to 4 icons
+        // Use newDrawable().mutate() to create a unique instance for the folder preview.
+        // This prevents the FolderIconView's setBounds() calls from affecting 
+        // the same drawable instances used elsewhere (like in the full folder view).
+        icons.addAll(newIcons.take(4).map { it.constantState?.newDrawable()?.mutate() ?: it })
         invalidate()
     }
 
