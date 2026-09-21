@@ -54,9 +54,9 @@ class MainActivity : AppCompatActivity() {
     private var startY = 0f
     var longPressedView: View? = null
 
-    private var activeFolder: Folder? = null
-    private var activeFolderAdapter: AppsAdapter? = null
-    private var activeFolderDialog: AlertDialog? = null
+    internal var activeFolder: Folder? = null
+    internal var activeFolderAdapter: AppsAdapter? = null
+    internal var activeFolderDialog: AlertDialog? = null
 
     private var refreshJob: Job? = null
     
@@ -465,6 +465,18 @@ class MainActivity : AppCompatActivity() {
             withContext(Dispatchers.IO) { saveAppOrder() }
             Toast.makeText(this@MainActivity, "Apps organized into folders", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // Close folder dialog when returning to home screen (e.g. Home button pressed)
+        activeFolderDialog?.dismiss()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Close folder dialog when returning to home screen from another app
+        activeFolderDialog?.dismiss()
     }
 
     override fun onDestroy() {

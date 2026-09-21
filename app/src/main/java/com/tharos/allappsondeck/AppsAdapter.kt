@@ -264,6 +264,8 @@ class AppsAdapter(
                     val launchIntent = mainActivity.packageManager.getLaunchIntentForPackage(packageName)
                     if (launchIntent != null) {
                         mainActivity.startActivity(launchIntent)
+                        // Close folder dialog if it's open
+                        mainActivity.activeFolderDialog?.dismiss()
                     } else {
                         Toast.makeText(mainActivity, "App not found", Toast.LENGTH_SHORT).show()
                         mainActivity.refreshApps()
