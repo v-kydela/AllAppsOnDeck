@@ -286,9 +286,18 @@ class AppsAdapter(
                 } else {
                     mainActivity.popupMenu?.menu?.add(MENU_CREATE_FOLDER)
                 }
+                
+                val isPinned = mainActivity.isAppPinned(item.activityInfo.packageName)
+                val pinMenuTitle = if (isPinned) "Unpin from Main List" else "Pin to Main List"
+                mainActivity.popupMenu?.menu?.add(pinMenuTitle)
+
                 mainActivity.popupMenu?.menu?.add(MENU_APP_INFO)
                 mainActivity.popupMenu?.setOnMenuItemClickListener { menuItem ->
                     when (menuItem.title) {
+                        "Pin to Main List", "Unpin from Main List" -> {
+                            mainActivity.togglePinApp(item.activityInfo.packageName)
+                            true
+                        }
                         MENU_CREATE_FOLDER -> {
                             val suggestedName = mainActivity.getFolderNameForApps(listOf(item.activityInfo.packageName))
                             val editText = EditText(mainActivity)

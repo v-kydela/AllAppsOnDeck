@@ -354,6 +354,50 @@ class MainActivity : AppCompatActivity() {
         return keywords.any { this.contains(it, ignoreCase = true) }
     }
 
+    internal fun isAppPinned(packageName: String): Boolean {
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        if (!prefs.contains("pinned_apps_v1")) {
+            val lower = packageName.lowercase()
+            return lower.contains("camera") || lower.contains("clock") || lower.contains("calendar") || lower.contains("calculator")
+        }
+        val pinnedSet = prefs.getStringSet("pinned_apps_v1", null) ?: emptySet()
+        return pinnedSet.contains(packageName)
+    }
+
+    internal fun togglePinApp(packageName: String) {
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val current = if (!prefs.contains("pinned_apps_v1")) {
+            cachedApps.keys.filter { pkg ->
+                val lower = pkg.lowercase()
+                lower.contains("camera") || lower.contains("clock") || lower.contains("calendar") || lower.contains("calculator")
+            }.toMutableSet()
+        } else {
+            prefs.getStringSet("pinned_apps_v1", emptySet())?.toMutableSet() ?: mutableSetOf()
+        }
+
+        val becomingPinned = !current.contains(packageName)
+        if (current.contains(packageName)) {
+            current.remove(packageName)
+            Toast.makeText(this, "App unpinned from main list", Toast.LENGTH_SHORT).show()
+        } else {
+            current.add(packageName)
+            Toast.makeText(this, "App pinned to main list", Toast.LENGTH_SHORT).show()
+        }
+        prefs.edit { putStringSet("pinned_apps_v1", current) }
+
+        if (becomingPinned) {
+            cachedApps[packageName]?.let { appResolveInfo ->
+                val folder = items.find { it is Folder && it.apps.contains(packageName) } as? Folder
+                if (folder != null) {
+                    removeAppFromFolder(appResolveInfo)
+                    return
+                }
+            }
+        }
+        
+        refreshApps()
+    }
+
     internal fun getFolderNameForApps(packageNames: List<String>): String {
         val categoryCounts = mutableMapOf<String, Int>()
         packageNames.forEach { pkg ->
@@ -396,8 +440,9 @@ class MainActivity : AppCompatActivity() {
                 val unassignedApps = mutableListOf<ResolveInfo>()
 
                 for (app in sortedApps) {
+                    val pkgName = app.activityInfo.packageName
                     val appCats = appToCategories[app]?.filter { it in validCategories } ?: emptyList()
-                    if (appCats.isEmpty()) {
+                    if (appCats.isEmpty() || isAppPinned(pkgName)) {
                         unassignedApps.add(app)
                     } else {
                         val bestCat = appCats.minByOrNull { assignments[it]?.size ?: 0 }!!
@@ -551,7 +596,7 @@ class MainActivity : AppCompatActivity() {
                         val appCategories = withContext(Dispatchers.IO) { getAppCategories(app.activityInfo.packageName) }
                         var addedToFolder = false
 
-                        if (appCategories.isNotEmpty()) {
+                        if (appCategories.isNotEmpty() && !isAppPinned(app.activityInfo.packageName)) {
                             // Find all existing folders that match any of the app's categories
                             val candidateFolders = newItems.filterIsInstance<Folder>().filter { folder ->
                                 appCategories.any { it.equals(folder.name, ignoreCase = true) }
