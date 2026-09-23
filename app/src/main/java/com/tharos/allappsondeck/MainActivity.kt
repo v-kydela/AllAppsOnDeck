@@ -593,27 +593,8 @@ class MainActivity : AppCompatActivity() {
                     }
 
                     for (app in newApps) {
-                        val appCategories = withContext(Dispatchers.IO) { getAppCategories(app.activityInfo.packageName) }
-                        var addedToFolder = false
-
-                        if (appCategories.isNotEmpty() && !isAppPinned(app.activityInfo.packageName)) {
-                            // Find all existing folders that match any of the app's categories
-                            val candidateFolders = newItems.filterIsInstance<Folder>().filter { folder ->
-                                appCategories.any { it.equals(folder.name, ignoreCase = true) }
-                            }
-
-                            if (candidateFolders.isNotEmpty()) {
-                                // Pick the smallest folder to keep them even
-                                val targetFolder = candidateFolders.minByOrNull { it.apps.size }
-                                targetFolder?.apps?.add(app.activityInfo.packageName)
-                                addedToFolder = true
-                            }
-                        }
-
-                        if (!addedToFolder) {
-                            newItems.add(insertIndex, app)
-                            insertIndex++
-                        }
+                        newItems.add(insertIndex, app)
+                        insertIndex++
                     }
                 }
 
