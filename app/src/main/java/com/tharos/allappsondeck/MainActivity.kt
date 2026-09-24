@@ -190,7 +190,7 @@ class MainActivity : AppCompatActivity() {
         private const val PREFS_NAME = "AppOrder"
         private const val LAYOUT_KEY = "app_layout_v5" // Upgraded key to include global action item
         private const val ACTION_ITEM_KEY = "G:ACTION"
-        private const val CATEGORY_CACHE_PREFS = "CategoryCache"
+        private const val CATEGORY_CACHE_PREFS = "CategoryCache_v2"
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -307,7 +307,7 @@ class MainActivity : AppCompatActivity() {
                     ApplicationInfo.CATEGORY_AUDIO -> "Media"
                     ApplicationInfo.CATEGORY_VIDEO -> "Media"
                     ApplicationInfo.CATEGORY_IMAGE -> "Media"
-                    ApplicationInfo.CATEGORY_SOCIAL -> "Social"
+                    ApplicationInfo.CATEGORY_SOCIAL -> "Communication"
                     ApplicationInfo.CATEGORY_NEWS -> "News"
                     ApplicationInfo.CATEGORY_MAPS -> "Navigation"
                     ApplicationInfo.CATEGORY_PRODUCTIVITY -> "Productivity"
@@ -323,7 +323,13 @@ class MainActivity : AppCompatActivity() {
             if (label.containsAny("flight", "airline", "hotel", "booking", "travel", "expedia", "airbnb", "trip")) categories.add("Travel")
             if (label.containsAny("taxi", "ride", "uber", "lyft", "grab", "transit", "train", "bus", "metro")) categories.add("Transit")
             if (label.containsAny("shop", "store", "market", "amazon", "ebay", "walmart", "target", "shopping", "cart")) categories.add("Shopping")
-            if (label.containsAny("chat", "msg", "messenger", "whatsapp", "signal", "telegram", "discord", "slack")) categories.add("Communication")
+            if (label.containsAny(
+                    "chat", "msg", "messenger", "whatsapp", "signal", "telegram", "discord", "slack",
+                    "social", "text", "viber", "line", "wechat", "qq", "kakaotalk", "meet", "teams", "zoom",
+                    "skype", "element", "session", "matrix", "messages", "message", "forum", "reddit",
+                    "twitter", "instagram", "facebook", "snapchat", "tiktok", "linkedin", "dating", "tinder",
+                    "bumble", "hinge", "contact", "phone", "dialer", "call"
+                )) categories.add("Communication")
             if (label.containsAny("mail", "outlook", "gmail", "inbox")) categories.add("Communication")
             if (label.containsAny("office", "doc", "sheet", "slide", "pdf", "note", "keep", "word", "excel", "ppt")) categories.add("Productivity")
             if (label.containsAny("photo", "gallery", "camera", "editor", "video", "player", "music", "stream")) categories.add("Media")
@@ -420,6 +426,7 @@ class MainActivity : AppCompatActivity() {
             // Move heavy computation to Default dispatcher
             val result = withContext(Dispatchers.Default) {
                 ensureCategorySetsPrefetched()
+                categoryCache.clear()
                 val apps = getInstalledLauncherApps()
 
                 // 1. Get all categories for all apps
@@ -434,6 +441,17 @@ class MainActivity : AppCompatActivity() {
                 // 3. Keep only categories that have at least 2 potential members
                 val validCategories = potentialCounts.filter { it.value > 1 }.keys.toList()
 
+                val publisherCategories = setOf("Google", "Microsoft", "Samsung")
+
+                fun selectBestCategory(appCats: List<String>, currentAssignments: Map<String, List<ResolveInfo>>): String {
+                    if (appCats.contains("Communication")) {
+                        return "Communication"
+                    }
+                    val functionalCats = appCats.filter { it !in publisherCategories }
+                    val targetCats = functionalCats.ifEmpty { appCats }
+                    return targetCats.minByOrNull { currentAssignments[it]?.size ?: 0 }!!
+                }
+
                 // 4. Initial Assignment: Least flexible apps first
                 val sortedApps = apps.sortedBy { app -> appToCategories[app]?.count { it in validCategories } ?: 0 }
                 val assignments = mutableMapOf<String, MutableList<ResolveInfo>>()
@@ -445,7 +463,7 @@ class MainActivity : AppCompatActivity() {
                     if (appCats.isEmpty() || isAppPinned(pkgName)) {
                         unassignedApps.add(app)
                     } else {
-                        val bestCat = appCats.minByOrNull { assignments[it]?.size ?: 0 }!!
+                        val bestCat = selectBestCategory(appCats, assignments)
                         assignments.getOrPut(bestCat) { mutableListOf() }.add(app)
                     }
                 }
@@ -467,7 +485,10 @@ class MainActivity : AppCompatActivity() {
                             if (fromCat == toCat) continue
                             val toAppsSize = assignments[toCat]?.size ?: 0
                             if (fromApps.size > toAppsSize + 1) {
-                                val movableApp = fromApps.find { app -> appToCategories[app]?.contains(toCat) == true }
+                                val movableApp = fromApps.find { app ->
+                                    val cats = appToCategories[app] ?: emptyList()
+                                    cats.contains(toCat) && !(fromCat == "Communication" && cats.contains("Communication"))
+                                }
                                 if (movableApp != null) {
                                     fromApps.remove(movableApp)
                                     assignments.getOrPut(toCat) { mutableListOf() }.add(movableApp)
