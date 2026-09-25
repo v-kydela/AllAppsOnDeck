@@ -190,7 +190,7 @@ class MainActivity : AppCompatActivity() {
         private const val PREFS_NAME = "AppOrder"
         private const val LAYOUT_KEY = "app_layout_v5" // Upgraded key to include global action item
         private const val ACTION_ITEM_KEY = "G:ACTION"
-        private const val CATEGORY_CACHE_PREFS = "CategoryCache_v2"
+        private const val CATEGORY_CACHE_PREFS = "CategoryCache"
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -426,6 +426,7 @@ class MainActivity : AppCompatActivity() {
             // Move heavy computation to Default dispatcher
             val result = withContext(Dispatchers.Default) {
                 ensureCategorySetsPrefetched()
+                getSharedPreferences(CATEGORY_CACHE_PREFS, MODE_PRIVATE).edit { clear() }
                 categoryCache.clear()
                 val apps = getInstalledLauncherApps()
 
