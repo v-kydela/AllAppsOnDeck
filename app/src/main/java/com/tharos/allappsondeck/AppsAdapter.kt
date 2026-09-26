@@ -303,7 +303,7 @@ class AppsAdapter(
                             val editText = EditText(mainActivity)
                             editText.setText(suggestedName)
                             AlertDialog.Builder(mainActivity)
-                                .setTitle("New Folder")
+                                .setTitle(FolderCategories.DEFAULT_FOLDER_NAME)
                                 .setView(editText)
                                 .setPositiveButton("Create") { _, _ ->
                                     val name = editText.text.toString().ifEmpty { suggestedName }

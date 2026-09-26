@@ -303,15 +303,15 @@ class MainActivity : AppCompatActivity() {
             // 2. Built-in Category (Fast)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val builtin = when (appInfo.category) {
-                    ApplicationInfo.CATEGORY_GAME -> "Games"
-                    ApplicationInfo.CATEGORY_AUDIO -> "Media"
-                    ApplicationInfo.CATEGORY_VIDEO -> "Media"
-                    ApplicationInfo.CATEGORY_IMAGE -> "Media"
-                    ApplicationInfo.CATEGORY_SOCIAL -> "Communication"
-                    ApplicationInfo.CATEGORY_NEWS -> "News"
-                    ApplicationInfo.CATEGORY_MAPS -> "Navigation"
-                    ApplicationInfo.CATEGORY_PRODUCTIVITY -> "Productivity"
-                    ApplicationInfo.CATEGORY_ACCESSIBILITY -> "Accessibility"
+                    ApplicationInfo.CATEGORY_GAME -> FolderCategories.GAMES
+                    ApplicationInfo.CATEGORY_AUDIO -> FolderCategories.MEDIA
+                    ApplicationInfo.CATEGORY_VIDEO -> FolderCategories.MEDIA
+                    ApplicationInfo.CATEGORY_IMAGE -> FolderCategories.MEDIA
+                    ApplicationInfo.CATEGORY_SOCIAL -> FolderCategories.COMMUNICATION
+                    ApplicationInfo.CATEGORY_NEWS -> FolderCategories.NEWS
+                    ApplicationInfo.CATEGORY_MAPS -> FolderCategories.NAVIGATION
+                    ApplicationInfo.CATEGORY_PRODUCTIVITY -> FolderCategories.PRODUCTIVITY
+                    ApplicationInfo.CATEGORY_ACCESSIBILITY -> FolderCategories.ACCESSIBILITY
                     else -> null
                 }
                 builtin?.let { categories.add(it) }
@@ -319,32 +319,32 @@ class MainActivity : AppCompatActivity() {
 
             // 3. Keyword-Based Heuristics (Fastest)
             val label = appInfo.loadLabel(packageManager).toString().lowercase()
-            if (label.containsAny("bank", "pay", "wallet", "finance", "credit", "crypto", "invest", "stock")) categories.add("Finance")
-            if (label.containsAny("flight", "airline", "hotel", "booking", "travel", "expedia", "airbnb", "trip")) categories.add("Travel")
-            if (label.containsAny("taxi", "ride", "uber", "lyft", "grab", "transit", "train", "bus", "metro")) categories.add("Transit")
-            if (label.containsAny("shop", "store", "market", "amazon", "ebay", "walmart", "target", "shopping", "cart")) categories.add("Shopping")
+            if (label.containsAny("bank", "pay", "wallet", "finance", "credit", "crypto", "invest", "stock")) categories.add(FolderCategories.FINANCE)
+            if (label.containsAny("flight", "airline", "hotel", "booking", "travel", "expedia", "airbnb", "trip")) categories.add(FolderCategories.TRAVEL)
+            if (label.containsAny("taxi", "ride", "uber", "lyft", "grab", "transit", "train", "bus", "metro")) categories.add(FolderCategories.TRANSIT)
+            if (label.containsAny("shop", "store", "market", "amazon", "ebay", "walmart", "target", "shopping", "cart")) categories.add(FolderCategories.SHOPPING)
             if (label.containsAny(
                     "chat", "msg", "messenger", "whatsapp", "signal", "telegram", "discord", "slack",
                     "social", "text", "viber", "line", "wechat", "qq", "kakaotalk", "meet", "teams", "zoom",
                     "skype", "element", "session", "matrix", "messages", "message", "forum", "reddit",
                     "twitter", "instagram", "facebook", "snapchat", "tiktok", "linkedin", "dating", "tinder",
                     "bumble", "hinge", "contact", "phone", "dialer", "call"
-                )) categories.add("Communication")
-            if (label.containsAny("mail", "outlook", "gmail", "inbox")) categories.add("Communication")
-            if (label.containsAny("office", "doc", "sheet", "slide", "pdf", "note", "keep", "word", "excel", "ppt")) categories.add("Productivity")
-            if (label.containsAny("photo", "gallery", "camera", "editor", "video", "player", "music", "stream")) categories.add("Media")
+                )) categories.add(FolderCategories.COMMUNICATION)
+            if (label.containsAny("mail", "outlook", "gmail", "inbox")) categories.add(FolderCategories.COMMUNICATION)
+            if (label.containsAny("office", "doc", "sheet", "slide", "pdf", "note", "keep", "word", "excel", "ppt")) categories.add(FolderCategories.PRODUCTIVITY)
+            if (label.containsAny("photo", "gallery", "camera", "editor", "video", "player", "music", "stream")) categories.add(FolderCategories.MEDIA)
 
             // 4. Publisher Check (Fast)
-            if (packageName.startsWith("com.google.android") || packageName.startsWith("com.google.android.apps")) categories.add("Google")
-            if (packageName.startsWith("com.microsoft.")) categories.add("Microsoft")
-            if (packageName.startsWith("com.sec.android") || packageName.startsWith("com.samsung.")) categories.add("Samsung")
+            if (packageName.startsWith("com.google.android") || packageName.startsWith("com.google.android.apps")) categories.add(FolderCategories.GOOGLE)
+            if (packageName.startsWith("com.microsoft.")) categories.add(FolderCategories.MICROSOFT)
+            if (packageName.startsWith("com.sec.android") || packageName.startsWith("com.samsung.")) categories.add(FolderCategories.SAMSUNG)
 
             // 5. Pre-fetched Intent Categorization (Fast - avoided expensive IPC)
             if (categories.size < 2) {
                 ensureCategorySetsPrefetched()
-                if (emailApps.contains(packageName)) categories.add("Communication")
-                if (dialerApps.contains(packageName)) categories.add("Communication")
-                if (browserApps.contains(packageName)) categories.add("Browsers")
+                if (emailApps.contains(packageName)) categories.add(FolderCategories.COMMUNICATION)
+                if (dialerApps.contains(packageName)) categories.add(FolderCategories.COMMUNICATION)
+                if (browserApps.contains(packageName)) categories.add(FolderCategories.BROWSERS)
             }
 
         } catch (_: Exception) {
@@ -412,10 +412,10 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        if (categoryCounts.isEmpty()) return "New Folder"
+        if (categoryCounts.isEmpty()) return FolderCategories.DEFAULT_FOLDER_NAME
 
         // Find the category that appears in the most apps in this set
-        return categoryCounts.maxByOrNull { it.value }?.key ?: "New Folder"
+        return categoryCounts.maxByOrNull { it.value }?.key ?: FolderCategories.DEFAULT_FOLDER_NAME
     }
 
     @SuppressLint("NotifyDataSetChanged")
@@ -442,11 +442,11 @@ class MainActivity : AppCompatActivity() {
                 // 3. Keep only categories that have at least 2 potential members
                 val validCategories = potentialCounts.filter { it.value > 1 }.keys.toList()
 
-                val publisherCategories = setOf("Google", "Microsoft", "Samsung")
+                val publisherCategories = FolderCategories.PUBLISHER_CATEGORIES
 
                 fun selectBestCategory(appCats: List<String>, currentAssignments: Map<String, List<ResolveInfo>>): String {
-                    if (appCats.contains("Communication")) {
-                        return "Communication"
+                    if (appCats.contains(FolderCategories.COMMUNICATION)) {
+                        return FolderCategories.COMMUNICATION
                     }
                     val functionalCats = appCats.filter { it !in publisherCategories }
                     val targetCats = functionalCats.ifEmpty { appCats }
@@ -488,7 +488,7 @@ class MainActivity : AppCompatActivity() {
                             if (fromApps.size > toAppsSize + 1) {
                                 val movableApp = fromApps.find { app ->
                                     val cats = appToCategories[app] ?: emptyList()
-                                    cats.contains(toCat) && !(fromCat == "Communication" && cats.contains("Communication"))
+                                    cats.contains(toCat) && !(fromCat == FolderCategories.COMMUNICATION && cats.contains(FolderCategories.COMMUNICATION))
                                 }
                                 if (movableApp != null) {
                                     fromApps.remove(movableApp)
