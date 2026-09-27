@@ -188,9 +188,12 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val PREFS_NAME = "AppOrder"
+        private const val KEY_PINNED_APPS = "pinned_apps_v1"
         private const val LAYOUT_KEY = "app_layout_v5" // Upgraded key to include global action item
         private const val ACTION_ITEM_KEY = "G:ACTION"
         private const val CATEGORY_CACHE_PREFS = "CategoryCache"
+
+        private val DEFAULT_PINNED_APP_KEYWORDS = listOf("camera", "clock", "calendar", "calculator")
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -360,25 +363,29 @@ class MainActivity : AppCompatActivity() {
         return keywords.any { this.contains(it, ignoreCase = true) }
     }
 
+    private fun isDefaultPinnedApp(packageName: String): Boolean {
+        return DEFAULT_PINNED_APP_KEYWORDS.any { packageName.contains(it, ignoreCase = true) }
+    }
+
+    private fun getDefaultPinnedAppPackages(): Set<String> {
+        return cachedApps.keys.filter { isDefaultPinnedApp(it) }.toSet()
+    }
+
     internal fun isAppPinned(packageName: String): Boolean {
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-        if (!prefs.contains("pinned_apps_v1")) {
-            val lower = packageName.lowercase()
-            return lower.contains("camera") || lower.contains("clock") || lower.contains("calendar") || lower.contains("calculator")
+        if (!prefs.contains(KEY_PINNED_APPS)) {
+            return isDefaultPinnedApp(packageName)
         }
-        val pinnedSet = prefs.getStringSet("pinned_apps_v1", null) ?: emptySet()
+        val pinnedSet = prefs.getStringSet(KEY_PINNED_APPS, null) ?: emptySet()
         return pinnedSet.contains(packageName)
     }
 
     internal fun togglePinApp(packageName: String) {
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-        val current = if (!prefs.contains("pinned_apps_v1")) {
-            cachedApps.keys.filter { pkg ->
-                val lower = pkg.lowercase()
-                lower.contains("camera") || lower.contains("clock") || lower.contains("calendar") || lower.contains("calculator")
-            }.toMutableSet()
+        val current = if (!prefs.contains(KEY_PINNED_APPS)) {
+            getDefaultPinnedAppPackages().toMutableSet()
         } else {
-            prefs.getStringSet("pinned_apps_v1", emptySet())?.toMutableSet() ?: mutableSetOf()
+            prefs.getStringSet(KEY_PINNED_APPS, emptySet())?.toMutableSet() ?: mutableSetOf()
         }
 
         val becomingPinned = !current.contains(packageName)
@@ -389,7 +396,7 @@ class MainActivity : AppCompatActivity() {
             current.add(packageName)
             Toast.makeText(this, "App pinned to main list", Toast.LENGTH_SHORT).show()
         }
-        prefs.edit { putStringSet("pinned_apps_v1", current) }
+        prefs.edit { putStringSet(KEY_PINNED_APPS, current) }
 
         if (becomingPinned) {
             cachedApps[packageName]?.let { appResolveInfo ->
@@ -402,6 +409,23 @@ class MainActivity : AppCompatActivity() {
         }
         
         refreshApps()
+    }
+
+    internal fun restoreDefaultPinnedApps() {
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        prefs.edit { remove(KEY_PINNED_APPS) }
+
+        val defaultPinnedApps = cachedApps.values.filter { isDefaultPinnedApp(it.activityInfo.packageName) }
+
+        for (app in defaultPinnedApps) {
+            val folder = items.find { it is Folder && it.apps.contains(app.activityInfo.packageName) } as? Folder
+            if (folder != null) {
+                removeAppFromFolder(app)
+            }
+        }
+
+        refreshApps()
+        Toast.makeText(this, "Default pinned apps restored", Toast.LENGTH_SHORT).show()
     }
 
     internal fun getFolderNameForApps(packageNames: List<String>): String {
