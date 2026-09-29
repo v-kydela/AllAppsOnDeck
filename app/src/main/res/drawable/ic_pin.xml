@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Dark circular background badge for high contrast over any app icon -->
+    <path
+        android:fillColor="#CC000000"
+        android:pathData="M12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2z" />
+    <!-- White pushpin icon -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M16,9V4h1V2H7v2h1v5l-2,2v2h5v7l1,1l1-1v-7h5v-2L16,9z" />
+</vector>

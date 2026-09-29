@@ -255,6 +255,7 @@ class AppsAdapter(
     inner class AppViewHolder(itemView: View) : BaseViewHolder(itemView) {
         val appName: TextView = itemView.findViewById(R.id.app_name)
         val appIcon: ImageView = itemView.findViewById(R.id.app_icon)
+        val pinIcon: ImageView = itemView.findViewById(R.id.pin_icon)
 
         override fun handleItemClick() {
             val pos = bindingAdapterPosition
@@ -500,6 +501,9 @@ class AppsAdapter(
                 
                 val icon = mainActivity.iconCache[pkg] ?: app.loadIcon(mainActivity.packageManager)
                 holder.appIcon.setImageDrawable(icon)
+
+                val isPinned = mainActivity.isAppPinned(pkg)
+                holder.pinIcon.visibility = if (isPinned) View.VISIBLE else View.GONE
             }
             is FolderViewHolder -> {
                 val folder = items[position] as Folder
