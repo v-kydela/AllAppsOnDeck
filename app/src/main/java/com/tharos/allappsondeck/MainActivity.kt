@@ -505,6 +505,13 @@ class MainActivity : AppCompatActivity() {
         refreshApps()
     }
 
+    internal fun unpinAllApps() {
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        prefs.edit { putStringSet(KEY_PINNED_APPS, emptySet()) }
+        refreshApps()
+        Toast.makeText(this, "All apps unpinned", Toast.LENGTH_SHORT).show()
+    }
+
     internal fun restoreDefaultPinnedApps() {
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         prefs.edit { remove(KEY_PINNED_APPS) }

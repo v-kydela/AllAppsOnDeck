@@ -25,6 +25,7 @@ class AppsAdapter(
         private const val TYPE_FOLDER = 1
         private const val TYPE_ACTION = 2
         private const val MENU_AUTO_ORGANIZE = "Auto Organize"
+        private const val MENU_UNPIN_ALL = "Unpin All Apps"
         private const val MENU_RESTORE_DEFAULT_PINNED = "Restore Default Pinned Apps"
         private const val MENU_CREATE_FOLDER = "Create Folder"
         private const val MENU_EMPTY_ALL_FOLDERS = "Empty All Folders"
@@ -425,6 +426,7 @@ class AppsAdapter(
 
         private fun populateMenu(popup: PopupMenu) {
             popup.menu.add(MENU_AUTO_ORGANIZE)
+            popup.menu.add(MENU_UNPIN_ALL)
             popup.menu.add(MENU_RESTORE_DEFAULT_PINNED)
             popup.menu.add(MENU_EMPTY_ALL_FOLDERS)
             popup.menu.add(MENU_REFRESH)
@@ -433,6 +435,10 @@ class AppsAdapter(
                 when (menuItem.title) {
                     MENU_AUTO_ORGANIZE -> {
                         mainActivity.autoOrganizeApps()
+                        true
+                    }
+                    MENU_UNPIN_ALL -> {
+                        mainActivity.unpinAllApps()
                         true
                     }
                     MENU_RESTORE_DEFAULT_PINNED -> {
