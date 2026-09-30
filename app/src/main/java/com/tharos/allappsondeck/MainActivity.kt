@@ -670,7 +670,13 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            newItems.addAll(unassignedApps.sortedBy { it.loadLabel(packageManager).toString().lowercase() })
+            val (pinnedApps, nonPinnedApps) = unassignedApps.partition { isAppPinned(it.activityInfo.packageName) }
+
+            fun getLabel(app: ResolveInfo) = labelCache[app.activityInfo.packageName]
+                ?: app.loadLabel(packageManager).toString()
+
+            newItems.addAll(pinnedApps.sortedBy { getLabel(it).lowercase() })
+            newItems.addAll(nonPinnedApps.sortedBy { getLabel(it).lowercase() })
 
             items.clear()
             items.addAll(newItems)
