@@ -13,6 +13,9 @@ object FolderCategories {
     const val NAVIGATION = "Navigation"
     const val ACCESSIBILITY = "Accessibility"
     const val BROWSERS = "Browsers"
+    const val HEALTH = "Health & Fitness"
+    const val SMART_HOME = "Smart Home"
+    const val FOOD = "Food & Drink"
 
     const val GOOGLE = "Google"
     const val MICROSOFT = "Microsoft"

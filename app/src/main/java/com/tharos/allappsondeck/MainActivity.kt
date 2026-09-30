@@ -322,24 +322,95 @@ class MainActivity : AppCompatActivity() {
                 builtin?.let { categories.add(it) }
             }
 
-            // 3. Keyword-Based Heuristics (Fastest)
+            // 3. Keyword & Package Heuristics (Fastest)
             val label = appInfo.loadLabel(packageManager).toString().lowercase()
-            if (label.containsAny("bank", "pay", "wallet", "finance", "credit", "crypto", "invest", "stock")) categories.add(FolderCategories.FINANCE)
-            if (label.containsAny("flight", "airline", "hotel", "booking", "travel", "expedia", "airbnb", "trip")) categories.add(FolderCategories.TRAVEL)
-            if (label.containsAny("taxi", "ride", "uber", "lyft", "grab", "transit", "train", "bus", "metro")) categories.add(FolderCategories.TRANSIT)
-            if (label.containsAny("shop", "store", "market", "amazon", "ebay", "walmart", "target", "shopping", "cart")) categories.add(FolderCategories.SHOPPING)
+            val searchText = "$label $packageName".lowercase()
+
+            if (searchText.containsAny(
+                    "game", "games", "gaming", "steam", "epicgames", "epic games", "roblox", "minecraft",
+                    "playstation", "xbox", "nintendo", "twitch", "riot", "emulator", "arcade",
+                    "puzzle", "sudoku", "chess", "casino", "poker", "cards", "solitaire", "rpg", "mmo",
+                    "fps", "quest", "craft", "clash", "saga", "genshin", "honkai", "pokemon", "retroarch",
+                    "dolphin", "ppsspp", "yuzu", "citra", "gamepass", "geforce now"
+                )) categories.add(FolderCategories.GAMES)
+
+            if (searchText.containsAny(
+                    "taxi", "ride", "uber", "lyft", "grab", "transit", "train", "bus", "metro", "subway",
+                    "tram", "ferry", "rail", "commute", "transport", "mobility", "orca", "umo", "clipper",
+                    "ventra", "mta", "bart", "septa", "marta", "charliecard", "oyster", "navigo", "suica",
+                    "pasmo", "icoca", "hopcard", "fare", "ticket", "toll", "bird", "lime", "spin", "scooter",
+                    "waymo", "bolt", "freenow", "gett", "didi", "ola", "cabify"
+                )) categories.add(FolderCategories.TRANSIT)
+
+            if (searchText.containsAny(
+                    "flight", "airline", "hotel", "booking", "travel", "expedia", "airbnb", "trip", "kayak",
+                    "priceline", "agoda", "trivago", "tripadvisor", "hopper", "hostel", "flightradar",
+                    "delta", "united", "american airlines", "southwest", "lufthansa", "ryanair",
+                    "easyjet", "emirates", "tsa", "passport"
+                )) categories.add(FolderCategories.TRAVEL)
+
+            if (searchText.containsAny(
+                    "bank", "pay", "wallet", "finance", "credit", "crypto", "invest", "stock", "chase",
+                    "wells", "citi", "bofa", "fidelity", "vanguard", "schwab", "robinhood", "coinbase",
+                    "venmo", "cash app", "paypal", "zelle", "revolut", "wise", "stripe", "mint", "ynab",
+                    "monzo", "capital one", "discover", "turbotax"
+                )) categories.add(FolderCategories.FINANCE)
+
+            if (searchText.containsAny(
+                    "shop", "store", "market", "amazon", "ebay", "walmart", "target", "shopping", "cart",
+                    "etsy", "aliexpress", "temu", "shein", "rakuten", "klarna", "afterpay", "poshmark",
+                    "mercari", "chewy", "bestbuy", "costco", "samsclub"
+                )) categories.add(FolderCategories.SHOPPING)
+
+            if (searchText.containsAny(
+                    "food", "drink", "restaurant", "doordash", "ubereats", "grubhub", "postmates", "instacart",
+                    "seamless", "yelp", "opentable", "resy", "mcdonald", "starbucks", "domino", "pizza",
+                    "dunkin", "chipotle", "subway", "taco bell", "coffee", "bakery"
+                )) categories.add(FolderCategories.FOOD)
+
+            if (searchText.containsAny(
+                    "health", "fitness", "workout", "gym", "strava", "fitbit", "garmin", "myfitnesspal",
+                    "nike", "running", "yoga", "meditation", "headspace", "calm", "pharmacy", "cvs",
+                    "walgreens", "doctor", "clinic", "medical", "patient"
+                )) categories.add(FolderCategories.HEALTH)
+
+            if (searchText.containsAny(
+                    "smarthome", "smart home", "google home", "alexa", "smartthings", "hue", "ring",
+                    "nest", "tuya", "kasa", "tapo", "homekit", "nanoleaf", "wyze", "ecobee", "simplisafe",
+                    "arlo", "blink", "lifx"
+                )) categories.add(FolderCategories.SMART_HOME)
+
+            if (searchText.containsAny(
+                    "office", "doc", "sheet", "slide", "pdf", "note", "keep", "word", "excel", "ppt",
+                    "workspace", "notion", "evernote", "obsidian", "todoist", "ticktick", "trello",
+                    "jira", "asana", "scanner", "drive", "dropbox", "box", "onedrive", "calculator",
+                    "calendar", "clock", "alarm", "file manager"
+                )) categories.add(FolderCategories.PRODUCTIVITY)
+
+            if (searchText.containsAny(
+                    "photo", "gallery", "camera", "editor", "video", "player", "music", "stream", "netflix",
+                    "youtube", "hulu", "disney", "hbo", "spotify", "pandora", "soundcloud", "deezer",
+                    "tidal", "vlc", "plex", "jellyfin", "audible", "podcast", "cinema", "movie", "prime video"
+                )) categories.add(FolderCategories.MEDIA)
+
+            if (searchText.containsAny(
+                    "news", "nytimes", "wapo", "bbc", "cnn", "foxnews", "reuters", "bloomberg", "wsj",
+                    "guardian", "medium", "feedly", "pocket", "flipboard", "newspaper"
+                )) categories.add(FolderCategories.NEWS)
+
+            if (searchText.containsAny(
+                    "map", "navigation", "gps", "waze", "compass", "speedometer", "location"
+                )) categories.add(FolderCategories.NAVIGATION)
+
             if (!isBrowser) {
-                if (label.containsAny(
+                if (searchText.containsAny(
                         "chat", "msg", "messenger", "whatsapp", "signal", "telegram", "discord", "slack",
                         "social", "text", "viber", "line", "wechat", "qq", "kakaotalk", "meet", "teams", "zoom",
                         "skype", "element", "session", "matrix", "messages", "message", "forum", "reddit",
                         "twitter", "instagram", "facebook", "snapchat", "tiktok", "linkedin", "dating", "tinder",
-                        "bumble", "hinge", "contact", "phone", "dialer", "call"
+                        "bumble", "hinge", "contact", "phone", "dialer", "call", "mail", "outlook", "gmail", "inbox"
                     )) categories.add(FolderCategories.COMMUNICATION)
-                if (label.containsAny("mail", "outlook", "gmail", "inbox")) categories.add(FolderCategories.COMMUNICATION)
             }
-            if (label.containsAny("office", "doc", "sheet", "slide", "pdf", "note", "keep", "word", "excel", "ppt")) categories.add(FolderCategories.PRODUCTIVITY)
-            if (label.containsAny("photo", "gallery", "camera", "editor", "video", "player", "music", "stream")) categories.add(FolderCategories.MEDIA)
 
             // 4. Publisher Check (Fast)
             if (packageName.startsWith("com.google.android") || packageName.startsWith("com.google.android.apps")) categories.add(FolderCategories.GOOGLE)
