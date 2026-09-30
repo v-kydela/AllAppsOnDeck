@@ -193,7 +193,11 @@ class MainActivity : AppCompatActivity() {
         private const val ACTION_ITEM_KEY = "G:ACTION"
         private const val CATEGORY_CACHE_PREFS = "CategoryCache"
 
-        private val DEFAULT_PINNED_APP_KEYWORDS = listOf("camera", "clock", "calendar", "calculator")
+        private val DEFAULT_PINNED_APP_KEYWORDS = listOf(
+            "camera", "clock", "deskclock", "chrome", "files",
+            "documentsui", "filemanager", "myfiles", "maps",
+            "vending", "playstore", "play store"
+        )
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -458,7 +462,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun isDefaultPinnedApp(packageName: String): Boolean {
-        return DEFAULT_PINNED_APP_KEYWORDS.any { packageName.contains(it, ignoreCase = true) }
+        val label = labelCache[packageName] ?: cachedApps[packageName]?.let {
+            try { it.loadLabel(packageManager).toString() } catch (_: Exception) { "" }
+        } ?: ""
+        return matchesKeywords(label, packageName, *DEFAULT_PINNED_APP_KEYWORDS.toTypedArray())
     }
 
     private fun getDefaultPinnedAppPackages(): Set<String> {
