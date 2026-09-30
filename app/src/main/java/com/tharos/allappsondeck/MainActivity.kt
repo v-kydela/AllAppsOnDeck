@@ -301,6 +301,8 @@ class MainActivity : AppCompatActivity() {
 
         val categories = mutableListOf<String>()
         try {
+            ensureCategorySetsPrefetched()
+            val isBrowser = browserApps.contains(packageName)
             val appInfo = packageManager.getApplicationInfo(packageName, 0)
             
             // 2. Built-in Category (Fast)
@@ -310,7 +312,7 @@ class MainActivity : AppCompatActivity() {
                     ApplicationInfo.CATEGORY_AUDIO -> FolderCategories.MEDIA
                     ApplicationInfo.CATEGORY_VIDEO -> FolderCategories.MEDIA
                     ApplicationInfo.CATEGORY_IMAGE -> FolderCategories.MEDIA
-                    ApplicationInfo.CATEGORY_SOCIAL -> FolderCategories.COMMUNICATION
+                    ApplicationInfo.CATEGORY_SOCIAL -> if (!isBrowser) FolderCategories.COMMUNICATION else null
                     ApplicationInfo.CATEGORY_NEWS -> FolderCategories.NEWS
                     ApplicationInfo.CATEGORY_MAPS -> FolderCategories.NAVIGATION
                     ApplicationInfo.CATEGORY_PRODUCTIVITY -> FolderCategories.PRODUCTIVITY
@@ -326,14 +328,16 @@ class MainActivity : AppCompatActivity() {
             if (label.containsAny("flight", "airline", "hotel", "booking", "travel", "expedia", "airbnb", "trip")) categories.add(FolderCategories.TRAVEL)
             if (label.containsAny("taxi", "ride", "uber", "lyft", "grab", "transit", "train", "bus", "metro")) categories.add(FolderCategories.TRANSIT)
             if (label.containsAny("shop", "store", "market", "amazon", "ebay", "walmart", "target", "shopping", "cart")) categories.add(FolderCategories.SHOPPING)
-            if (label.containsAny(
-                    "chat", "msg", "messenger", "whatsapp", "signal", "telegram", "discord", "slack",
-                    "social", "text", "viber", "line", "wechat", "qq", "kakaotalk", "meet", "teams", "zoom",
-                    "skype", "element", "session", "matrix", "messages", "message", "forum", "reddit",
-                    "twitter", "instagram", "facebook", "snapchat", "tiktok", "linkedin", "dating", "tinder",
-                    "bumble", "hinge", "contact", "phone", "dialer", "call"
-                )) categories.add(FolderCategories.COMMUNICATION)
-            if (label.containsAny("mail", "outlook", "gmail", "inbox")) categories.add(FolderCategories.COMMUNICATION)
+            if (!isBrowser) {
+                if (label.containsAny(
+                        "chat", "msg", "messenger", "whatsapp", "signal", "telegram", "discord", "slack",
+                        "social", "text", "viber", "line", "wechat", "qq", "kakaotalk", "meet", "teams", "zoom",
+                        "skype", "element", "session", "matrix", "messages", "message", "forum", "reddit",
+                        "twitter", "instagram", "facebook", "snapchat", "tiktok", "linkedin", "dating", "tinder",
+                        "bumble", "hinge", "contact", "phone", "dialer", "call"
+                    )) categories.add(FolderCategories.COMMUNICATION)
+                if (label.containsAny("mail", "outlook", "gmail", "inbox")) categories.add(FolderCategories.COMMUNICATION)
+            }
             if (label.containsAny("office", "doc", "sheet", "slide", "pdf", "note", "keep", "word", "excel", "ppt")) categories.add(FolderCategories.PRODUCTIVITY)
             if (label.containsAny("photo", "gallery", "camera", "editor", "video", "player", "music", "stream")) categories.add(FolderCategories.MEDIA)
 
@@ -343,11 +347,15 @@ class MainActivity : AppCompatActivity() {
             if (packageName.startsWith("com.sec.android") || packageName.startsWith("com.samsung.")) categories.add(FolderCategories.SAMSUNG)
 
             // 5. Pre-fetched Intent Categorization (Fast - avoided expensive IPC)
-            if (categories.size < 2) {
-                ensureCategorySetsPrefetched()
+            if (isBrowser) {
+                categories.add(FolderCategories.BROWSERS)
+            } else if (categories.size < 2) {
                 if (emailApps.contains(packageName)) categories.add(FolderCategories.COMMUNICATION)
                 if (dialerApps.contains(packageName)) categories.add(FolderCategories.COMMUNICATION)
-                if (browserApps.contains(packageName)) categories.add(FolderCategories.BROWSERS)
+            }
+
+            if (isBrowser) {
+                categories.remove(FolderCategories.COMMUNICATION)
             }
 
         } catch (_: Exception) {
@@ -469,6 +477,9 @@ class MainActivity : AppCompatActivity() {
                 val publisherCategories = FolderCategories.PUBLISHER_CATEGORIES
 
                 fun selectBestCategory(appCats: List<String>, currentAssignments: Map<String, List<ResolveInfo>>): String {
+                    if (appCats.contains(FolderCategories.BROWSERS)) {
+                        return FolderCategories.BROWSERS
+                    }
                     if (appCats.contains(FolderCategories.COMMUNICATION)) {
                         return FolderCategories.COMMUNICATION
                     }
@@ -512,7 +523,9 @@ class MainActivity : AppCompatActivity() {
                             if (fromApps.size > toAppsSize + 1) {
                                 val movableApp = fromApps.find { app ->
                                     val cats = appToCategories[app] ?: emptyList()
-                                    cats.contains(toCat) && !(fromCat == FolderCategories.COMMUNICATION && cats.contains(FolderCategories.COMMUNICATION))
+                                    cats.contains(toCat) &&
+                                        !(fromCat == FolderCategories.COMMUNICATION && cats.contains(FolderCategories.COMMUNICATION)) &&
+                                        !(fromCat == FolderCategories.BROWSERS && cats.contains(FolderCategories.BROWSERS))
                                 }
                                 if (movableApp != null) {
                                     fromApps.remove(movableApp)
