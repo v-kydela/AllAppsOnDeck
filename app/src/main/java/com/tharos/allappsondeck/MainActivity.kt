@@ -304,26 +304,31 @@ class MainActivity : AppCompatActivity() {
             ensureCategorySetsPrefetched()
             val isBrowser = browserApps.contains(packageName)
             val appInfo = packageManager.getApplicationInfo(packageName, 0)
-            
+            val label = appInfo.loadLabel(packageManager).toString().lowercase()
+            val pkgName = packageName.lowercase()
+
+            val isMainGoogleApp = pkgName == "com.google.android.googlequicksearchbox" || label == "google"
+
             // 2. Built-in Category (Fast)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val builtin = when (appInfo.category) {
-                    ApplicationInfo.CATEGORY_GAME -> FolderCategories.GAMES
-                    ApplicationInfo.CATEGORY_AUDIO -> FolderCategories.MEDIA
-                    ApplicationInfo.CATEGORY_VIDEO -> FolderCategories.MEDIA
-                    ApplicationInfo.CATEGORY_IMAGE -> FolderCategories.MEDIA
-                    ApplicationInfo.CATEGORY_SOCIAL -> if (!isBrowser) FolderCategories.COMMUNICATION else null
-                    ApplicationInfo.CATEGORY_NEWS -> FolderCategories.NEWS
-                    ApplicationInfo.CATEGORY_MAPS -> FolderCategories.NAVIGATION
-                    ApplicationInfo.CATEGORY_PRODUCTIVITY -> FolderCategories.PRODUCTIVITY
-                    ApplicationInfo.CATEGORY_ACCESSIBILITY -> FolderCategories.ACCESSIBILITY
-                    else -> null
+                if (!isMainGoogleApp || appInfo.category != ApplicationInfo.CATEGORY_AUDIO) {
+                    val builtin = when (appInfo.category) {
+                        ApplicationInfo.CATEGORY_GAME -> FolderCategories.GAMES
+                        ApplicationInfo.CATEGORY_AUDIO -> FolderCategories.MEDIA
+                        ApplicationInfo.CATEGORY_VIDEO -> FolderCategories.MEDIA
+                        ApplicationInfo.CATEGORY_IMAGE -> FolderCategories.MEDIA
+                        ApplicationInfo.CATEGORY_SOCIAL -> if (!isBrowser) FolderCategories.COMMUNICATION else null
+                        ApplicationInfo.CATEGORY_NEWS -> FolderCategories.NEWS
+                        ApplicationInfo.CATEGORY_MAPS -> FolderCategories.NAVIGATION
+                        ApplicationInfo.CATEGORY_PRODUCTIVITY -> FolderCategories.PRODUCTIVITY
+                        ApplicationInfo.CATEGORY_ACCESSIBILITY -> FolderCategories.ACCESSIBILITY
+                        else -> null
+                    }
+                    builtin?.let { categories.add(it) }
                 }
-                builtin?.let { categories.add(it) }
             }
 
             // 3. Keyword & Package Heuristics (Fastest)
-            val label = appInfo.loadLabel(packageManager).toString().lowercase()
             val searchText = "$label $packageName".lowercase()
 
             if (searchText.containsAny(
@@ -339,7 +344,7 @@ class MainActivity : AppCompatActivity() {
                     "tram", "ferry", "rail", "commute", "transport", "mobility", "orca", "umo", "clipper",
                     "ventra", "mta", "bart", "septa", "marta", "charliecard", "oyster", "navigo", "suica",
                     "pasmo", "icoca", "hopcard", "fare", "ticket", "toll", "bird", "lime", "spin", "scooter",
-                    "waymo", "bolt", "freenow", "gett", "didi", "ola", "cabify"
+                    "waymo", "bolt", "freenow", "gett", "didi", "cabify", "olacabs", "taxify"
                 )) categories.add(FolderCategories.TRANSIT)
 
             if (searchText.containsAny(
@@ -387,11 +392,13 @@ class MainActivity : AppCompatActivity() {
                     "calendar", "clock", "alarm", "file manager"
                 )) categories.add(FolderCategories.PRODUCTIVITY)
 
-            if (searchText.containsAny(
-                    "photo", "gallery", "camera", "editor", "video", "player", "music", "stream", "netflix",
-                    "youtube", "hulu", "disney", "hbo", "spotify", "pandora", "soundcloud", "deezer",
-                    "tidal", "vlc", "plex", "jellyfin", "audible", "podcast", "cinema", "movie", "prime video"
-                )) categories.add(FolderCategories.MEDIA)
+            if (!isMainGoogleApp) {
+                if (searchText.containsAny(
+                        "photo", "gallery", "camera", "editor", "video", "player", "music", "stream", "netflix",
+                        "youtube", "hulu", "disney", "hbo", "spotify", "pandora", "soundcloud", "deezer",
+                        "tidal", "vlc", "plex", "jellyfin", "audible", "podcast", "cinema", "movie", "prime video"
+                    )) categories.add(FolderCategories.MEDIA)
+            }
 
             if (searchText.containsAny(
                     "news", "nytimes", "wapo", "bbc", "cnn", "foxnews", "reuters", "bloomberg", "wsj",
@@ -413,9 +420,9 @@ class MainActivity : AppCompatActivity() {
             }
 
             // 4. Publisher Check (Fast)
-            if (packageName.startsWith("com.google.android") || packageName.startsWith("com.google.android.apps")) categories.add(FolderCategories.GOOGLE)
-            if (packageName.startsWith("com.microsoft.")) categories.add(FolderCategories.MICROSOFT)
-            if (packageName.startsWith("com.sec.android") || packageName.startsWith("com.samsung.")) categories.add(FolderCategories.SAMSUNG)
+            if (pkgName.startsWith("com.google.android") || pkgName.startsWith("com.google.android.apps")) categories.add(FolderCategories.GOOGLE)
+            if (pkgName.startsWith("com.microsoft.")) categories.add(FolderCategories.MICROSOFT)
+            if (pkgName.startsWith("com.sec.android") || pkgName.startsWith("com.samsung.")) categories.add(FolderCategories.SAMSUNG)
 
             // 5. Pre-fetched Intent Categorization (Fast - avoided expensive IPC)
             if (isBrowser) {
@@ -547,7 +554,12 @@ class MainActivity : AppCompatActivity() {
 
                 val publisherCategories = FolderCategories.PUBLISHER_CATEGORIES
 
-                fun selectBestCategory(appCats: List<String>, currentAssignments: Map<String, List<ResolveInfo>>): String {
+                fun selectBestCategory(app: ResolveInfo, appCats: List<String>, currentAssignments: Map<String, List<ResolveInfo>>): String {
+                    val pkgName = app.activityInfo.packageName
+                    val label = app.loadLabel(packageManager).toString().lowercase()
+                    if (appCats.contains(FolderCategories.GOOGLE) && (pkgName == "com.google.android.googlequicksearchbox" || label == "google")) {
+                        return FolderCategories.GOOGLE
+                    }
                     if (appCats.contains(FolderCategories.BROWSERS)) {
                         return FolderCategories.BROWSERS
                     }
@@ -570,7 +582,7 @@ class MainActivity : AppCompatActivity() {
                     if (appCats.isEmpty() || isAppPinned(pkgName)) {
                         unassignedApps.add(app)
                     } else {
-                        val bestCat = selectBestCategory(appCats, assignments)
+                        val bestCat = selectBestCategory(app, appCats, assignments)
                         assignments.getOrPut(bestCat) { mutableListOf() }.add(app)
                     }
                 }
@@ -593,10 +605,14 @@ class MainActivity : AppCompatActivity() {
                             val toAppsSize = assignments[toCat]?.size ?: 0
                             if (fromApps.size > toAppsSize + 1) {
                                 val movableApp = fromApps.find { app ->
+                                    val pkgName = app.activityInfo.packageName
+                                    val label = app.loadLabel(packageManager).toString().lowercase()
+                                    val isMainGoogleApp = pkgName == "com.google.android.googlequicksearchbox" || label == "google"
                                     val cats = appToCategories[app] ?: emptyList()
                                     cats.contains(toCat) &&
                                         !(fromCat == FolderCategories.COMMUNICATION && cats.contains(FolderCategories.COMMUNICATION)) &&
-                                        !(fromCat == FolderCategories.BROWSERS && cats.contains(FolderCategories.BROWSERS))
+                                        !(fromCat == FolderCategories.BROWSERS && cats.contains(FolderCategories.BROWSERS)) &&
+                                        !(fromCat == FolderCategories.GOOGLE && isMainGoogleApp)
                                 }
                                 if (movableApp != null) {
                                     fromApps.remove(movableApp)
