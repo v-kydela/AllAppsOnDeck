@@ -688,13 +688,17 @@ class MainActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        // Close folder dialog when returning to home screen (e.g. Home button pressed)
+        // Close menus, dialogs, and reset drag states when returning home
+        popupMenu?.dismiss()
         activeFolderDialog?.dismiss()
+        isDragging = false
+        longPressedView = null
     }
 
     override fun onResume() {
         super.onResume()
-        // Close folder dialog when returning to home screen from another app
+        // Close folder dialog and popups when returning to home screen
+        popupMenu?.dismiss()
         activeFolderDialog?.dismiss()
     }
 

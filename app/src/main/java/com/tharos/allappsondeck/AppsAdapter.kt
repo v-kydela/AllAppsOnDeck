@@ -266,7 +266,14 @@ class AppsAdapter(
                     val packageName = item.activityInfo.packageName
                     val launchIntent = mainActivity.packageManager.getLaunchIntentForPackage(packageName)
                     if (launchIntent != null) {
-                        mainActivity.startActivity(launchIntent)
+                        launchIntent.addFlags(
+                            android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                            android.content.Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+                        )
+                        val options = androidx.core.app.ActivityOptionsCompat.makeScaleUpAnimation(
+                            itemView, 0, 0, itemView.width, itemView.height
+                        ).toBundle()
+                        mainActivity.startActivity(launchIntent, options)
                         // Close folder dialog if it's open
                         mainActivity.activeFolderDialog?.dismiss()
                     } else {
