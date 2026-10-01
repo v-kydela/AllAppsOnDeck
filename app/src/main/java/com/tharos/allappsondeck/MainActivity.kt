@@ -1,9 +1,6 @@
 package com.tharos.allappsondeck
 
 import android.annotation.SuppressLint
-import android.app.AlertDialog
-import android.graphics.drawable.Drawable
-import java.util.concurrent.ConcurrentHashMap
 import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipDescription
@@ -13,17 +10,18 @@ import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
+import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.view.LayoutInflater
+import android.view.DragEvent
 import android.view.MotionEvent
 import android.view.View
-import android.view.DragEvent
 import android.view.ViewGroup
 import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -32,35 +30,55 @@ import androidx.core.net.toUri
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.isVisible
 import androidx.core.view.updatePadding
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
 import kotlin.math.max
 
+/**
+ * Main activity for All Apps On Deck launcher.
+ *
+ * Provides a customizable home screen launcher with smooth drag-and-drop reordering,
+ * in-window folder views, automatic folder organization by app categories,
+ * pinned app support, and dynamic window inset adaptation.
+ */
 class MainActivity : AppCompatActivity() {
 
+    // Main launcher grid view
     private lateinit var appsList: RecyclerView
+
+    // In-window folder overlay views (part of activity window for seamless drag-and-drop)
+    private lateinit var folderOverlay: ViewGroup
+    private lateinit var folderCard: View
+    private lateinit var folderTitle: TextView
+    private lateinit var folderAppsList: RecyclerView
+
+    // Active popup menu and main list backing items
     internal var popupMenu: PopupMenu? = null
     internal lateinit var items: MutableList<Any>
 
+    // Drag-and-drop tracking state
     internal var isDragging = false
     private var startX = 0f
     private var startY = 0f
     var longPressedView: View? = null
 
+    // Currently opened folder state
     internal var activeFolder: Folder? = null
     internal var activeFolderAdapter: AppsAdapter? = null
-    internal var activeFolderDialog: AlertDialog? = null
 
+    // Background job for asynchronous app scanning
     private var refreshJob: Job? = null
     
-    // Cache for intent-based apps to avoid expensive IPC
+    // Caches for installed apps, icons, labels, and auto-organize categories
     internal var cachedApps: Map<String, ResolveInfo> = emptyMap()
     internal val iconCache = ConcurrentHashMap<String, Drawable>()
     internal val labelCache = ConcurrentHashMap<String, String>()
@@ -70,6 +88,10 @@ class MainActivity : AppCompatActivity() {
     private val categoryCache = ConcurrentHashMap<String, List<String>>()
     private var isCategorySetsPrefetched = false
 
+    /**
+     * Touch listener attached to RecyclerViews to distinguish between taps,
+     * long presses, and drag-and-drop motion gestures.
+     */
     @SuppressLint("ClickableViewAccessibility")
     val appTouchListener = View.OnTouchListener { v, event ->
         // This is a simple click-detection mechanism.
@@ -102,35 +124,44 @@ class MainActivity : AppCompatActivity() {
                     val touchSlop = android.view.ViewConfiguration.get(v.context).scaledTouchSlop
                     // Check if the finger has moved far enough to be considered a drag
                     if (abs(event.x - startX) > touchSlop || abs(event.y - startY) > touchSlop) {
-                        popupMenu?.dismiss() // Dismiss the menu
+                        popupMenu?.dismiss()
                         val position =
                             recyclerView.getChildViewHolder(viewToDrag)?.bindingAdapterPosition
-                        if (position != null) {
-                            val item = (recyclerView.adapter as? AppsAdapter)?.items?.get(position)
+                        if (position != null && position != RecyclerView.NO_POSITION) {
+                            val adapter = recyclerView.adapter as? AppsAdapter
+                            val item = adapter?.items?.getOrNull(position)
 
-                            val mimeType = when (item) {
-                                is ResolveInfo -> "vnd.android.cursor.item/app"
-                                is Folder -> "vnd.android.cursor.item/folder"
-                                is GlobalActionItem -> "vnd.android.cursor.item/action"
-                                else -> ClipDescription.MIMETYPE_TEXT_PLAIN
+                            if (item != null) {
+                                val mimeType = when (item) {
+                                    is ResolveInfo -> "vnd.android.cursor.item/app"
+                                    is Folder -> "vnd.android.cursor.item/folder"
+                                    is GlobalActionItem -> "vnd.android.cursor.item/action"
+                                    else -> ClipDescription.MIMETYPE_TEXT_PLAIN
+                                }
+
+                                val dragData = DragData(
+                                    dragView = viewToDrag,
+                                    item = item,
+                                    sourceRecyclerView = recyclerView,
+                                    sourceAdapter = adapter,
+                                    sourcePosition = position,
+                                    sourceFolder = if (adapter.isFolderAdapter) activeFolder else null
+                                )
+
+                                val clipDataItem = ClipData.Item(position.toString())
+                                val mimeTypes = arrayOf(mimeType)
+                                val clipData = ClipData("drag-app", mimeTypes, clipDataItem)
+                                val dragShadowBuilder = View.DragShadowBuilder(viewToDrag)
+
+                                recyclerView.startDragAndDrop(
+                                    clipData, dragShadowBuilder, dragData, 0
+                                )
+
+                                viewToDrag.visibility = View.INVISIBLE
+                                isDragging = true
+                                longPressedView = null
                             }
-
-                            val clipDataItem = ClipData.Item(position.toString())
-                            val mimeTypes = arrayOf(mimeType)
-                            val clipData = ClipData("drag-app", mimeTypes, clipDataItem)
-                            val dragShadowBuilder = View.DragShadowBuilder(viewToDrag)
-
-                            // Pass the local reference 'viewToDrag' as the local state.
-                            // This object will not be nulled out during the drag operation.
-                            recyclerView.startDragAndDrop(
-                                clipData, dragShadowBuilder, viewToDrag, 0
-                            )
-
-                            // Hide the original view to prevent the "duplicate" effect.
-                            viewToDrag.visibility = View.INVISIBLE
                         }
-                        isDragging = true // Mark that we are now dragging
-                        longPressedView = null // It's now safe to nullify the class property.
                     }
                 }
                 // If dragging, consume the event
@@ -148,38 +179,64 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Drag listener attached to the main list container for handling drops on background empty space
+     * and restoring view visibilities when a drag gesture ends.
+     */
     private val appDragListener = View.OnDragListener { _, event ->
         when (event.action) {
             DragEvent.ACTION_DRAG_STARTED -> {
                 // Accept drags for apps, folders, and actions
                 val mimeTypes = event.clipDescription
-                mimeTypes.hasMimeType("vnd.android.cursor.item/app") || 
-                mimeTypes.hasMimeType("vnd.android.cursor.item/folder") ||
-                mimeTypes.hasMimeType("vnd.android.cursor.item/action")
+                mimeTypes?.hasMimeType("vnd.android.cursor.item/app") == true || 
+                mimeTypes?.hasMimeType("vnd.android.cursor.item/folder") == true ||
+                mimeTypes?.hasMimeType("vnd.android.cursor.item/action") == true
             }
             DragEvent.ACTION_DROP -> {
-                false
+                val dragData = event.localState as? DragData ?: return@OnDragListener false
+                val item = dragData.item
+
+                if (dragData.sourceFolder != null && item is ResolveInfo) {
+                    val pkg = item.activityInfo.packageName
+                    dragData.sourceFolder.apps.remove(pkg)
+                    if (dragData.sourceFolder.apps.isEmpty()) {
+                        val folderIdx = items.indexOf(dragData.sourceFolder)
+                        if (folderIdx != -1) {
+                            items.removeAt(folderIdx)
+                            appsList.adapter?.notifyItemRemoved(folderIdx)
+                        }
+                    }
+                    val newIndex = items.size
+                    items.add(item)
+                    appsList.adapter?.notifyItemInserted(newIndex)
+                    saveAppOrder()
+                    true
+                } else false
             }
             DragEvent.ACTION_DRAG_ENDED -> {
-                val view = event.localState as? View
+                val dragData = event.localState as? DragData
+                val view = dragData?.dragView ?: event.localState as? View
                 view?.post {
                     view.visibility = View.VISIBLE
                     // Sometimes a forced requestLayout on the parent helps stabilize Dialogs
                     (view.parent as? View)?.requestLayout()
                 }
                 isDragging = false
+                longPressedView = null
                 true
             }
             else -> true
         }
     }
 
+    // BroadcastReceiver for app install / uninstall / update events
     private val refreshReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             refreshApps()
         }
     }
 
+    // ActivityResultLauncher for returning from system app details screen
     private val settingsResultLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
             // App settings screen closed, refresh the list
@@ -207,10 +264,93 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         appsList = findViewById(R.id.apps_list)
+        folderOverlay = findViewById(R.id.folder_overlay)
+        folderCard = findViewById(R.id.folder_card)
 
-        // Set a default layout manager immediately to prevent flickering while waiting for insets
+        val dialogContent = findViewById<View>(R.id.folder_dialog_content)
+        folderTitle = dialogContent.findViewById(R.id.folder_title)
+        folderAppsList = dialogContent.findViewById(R.id.folder_apps_list)
+
+        // Handle back button presses to close open folder overlay before exiting activity
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (folderOverlay.isVisible) {
+                    closeFolderOverlay()
+                } else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                    isEnabled = true
+                }
+            }
+        })
+
+        // Tap outside folder card closes overlay
+        folderOverlay.setOnClickListener {
+            closeFolderOverlay()
+        }
+
+        // Tap inside folder card is consumed
+        folderCard.setOnClickListener {
+            // Consume clicks inside the folder card
+        }
+
+        // Consume drag events inside folder card so folder doesn't close while dragging within card
+        folderCard.setOnDragListener { _, event ->
+            when (event.action) {
+                DragEvent.ACTION_DRAG_STARTED -> {
+                    val mimeTypes = event.clipDescription
+                    mimeTypes?.hasMimeType("vnd.android.cursor.item/app") == true ||
+                    mimeTypes?.hasMimeType("vnd.android.cursor.item/folder") == true ||
+                    mimeTypes?.hasMimeType("vnd.android.cursor.item/action") == true
+                }
+                DragEvent.ACTION_DROP -> false
+                else -> true
+            }
+        }
+
+        // Detect dragging OUTSIDE folder card onto scrim background to close folder overlay seamlessly
+        folderOverlay.setOnDragListener { _, event ->
+            when (event.action) {
+                DragEvent.ACTION_DRAG_STARTED -> {
+                    val mimeTypes = event.clipDescription
+                    mimeTypes?.hasMimeType("vnd.android.cursor.item/app") == true ||
+                    mimeTypes?.hasMimeType("vnd.android.cursor.item/folder") == true ||
+                    mimeTypes?.hasMimeType("vnd.android.cursor.item/action") == true
+                }
+                DragEvent.ACTION_DRAG_ENTERED, DragEvent.ACTION_DRAG_LOCATION -> {
+                    val dragData = event.localState as? DragData
+                    if (dragData != null && activeFolder != null) {
+                        closeFolderOverlay()
+                    }
+                    true
+                }
+                DragEvent.ACTION_DROP -> {
+                    val dragData = event.localState as? DragData
+                    if (dragData != null && dragData.sourceFolder != null && dragData.item is ResolveInfo) {
+                        val pkg = dragData.item.activityInfo.packageName
+                        dragData.sourceFolder.apps.remove(pkg)
+                        if (dragData.sourceFolder.apps.isEmpty()) {
+                            val folderIdx = items.indexOf(dragData.sourceFolder)
+                            if (folderIdx != -1) {
+                                items.removeAt(folderIdx)
+                                appsList.adapter?.notifyItemRemoved(folderIdx)
+                            }
+                        }
+                        val newIndex = items.size
+                        items.add(dragData.item)
+                        appsList.adapter?.notifyItemInserted(newIndex)
+                        saveAppOrder()
+                        true
+                    } else false
+                }
+                else -> true
+            }
+        }
+
+        // Set default grid layout manager
         appsList.layoutManager = GridLayoutManager(this, 4, GridLayoutManager.VERTICAL, true)
 
+        // Dynamically recalculate padding and grid span count based on display insets and usable screen width
         ViewCompat.setOnApplyWindowInsetsListener(appsList) { view, insets ->
             // Using getInsetsIgnoringVisibility ensures that we reserve space for the system bars
             // even if they are currently hidden or transitioning, preventing the "jump" or flicker.
@@ -250,6 +390,18 @@ class MainActivity : AppCompatActivity() {
             insets
         }
 
+        // Apply system bar insets to folder overlay container
+        ViewCompat.setOnApplyWindowInsetsListener(folderOverlay) { view, insets ->
+            val systemBars = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
+            val displayCutout = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
+
+            val paddingTop = max(systemBars.top, displayCutout.top)
+            val paddingBottom = max(systemBars.bottom, displayCutout.bottom)
+
+            view.updatePadding(top = paddingTop, bottom = paddingBottom)
+            insets
+        }
+
         refreshApps()
 
         val intentFilter = IntentFilter("com.tharos.allappsondeck.REFRESH_APPS")
@@ -260,6 +412,9 @@ class MainActivity : AppCompatActivity() {
         appsList.setOnDragListener(appDragListener)
     }
 
+    /**
+     * Opens system application details settings page for the specified package.
+     */
     fun showAppDetails(packageName: String) {
         val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
         intent.data = "package:$packageName".toUri()
@@ -292,6 +447,9 @@ class MainActivity : AppCompatActivity() {
         ).map { it.activityInfo.packageName }.toSet()
     }
 
+    /**
+     * Determines matching category strings for a given package name using system APIs and keyword analysis.
+     */
     private fun getAppCategories(packageName: String): List<String> {
         categoryCache[packageName]?.let { return it }
         
@@ -481,6 +639,9 @@ class MainActivity : AppCompatActivity() {
         return pinnedSet.contains(packageName)
     }
 
+    /**
+     * Toggles pinned status for an app on the main list.
+     */
     internal fun togglePinApp(packageName: String) {
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         val current = if (!prefs.contains(KEY_PINNED_APPS)) {
@@ -512,6 +673,9 @@ class MainActivity : AppCompatActivity() {
         refreshApps()
     }
 
+    /**
+     * Unpins all currently pinned apps from the main list.
+     */
     internal fun unpinAllApps() {
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         prefs.edit { putStringSet(KEY_PINNED_APPS, emptySet()) }
@@ -519,6 +683,9 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, "All apps unpinned", Toast.LENGTH_SHORT).show()
     }
 
+    /**
+     * Restores default system pinned apps set.
+     */
     internal fun restoreDefaultPinnedApps() {
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         prefs.edit { remove(KEY_PINNED_APPS) }
@@ -536,6 +703,9 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, "Default pinned apps restored", Toast.LENGTH_SHORT).show()
     }
 
+    /**
+     * Determines the best suggested folder name for a list of app package names based on category frequency.
+     */
     internal fun getFolderNameForApps(packageNames: List<String>): String {
         val categoryCounts = mutableMapOf<String, Int>()
         packageNames.forEach { pkg ->
@@ -550,6 +720,9 @@ class MainActivity : AppCompatActivity() {
         return categoryCounts.maxByOrNull { it.value }?.key ?: FolderCategories.DEFAULT_FOLDER_NAME
     }
 
+    /**
+     * Automatically groups installed apps into categorized folders.
+     */
     @SuppressLint("NotifyDataSetChanged")
     internal fun autoOrganizeApps() {
         lifecycleScope.launch {
@@ -690,7 +863,7 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         // Close menus, dialogs, and reset drag states when returning home
         popupMenu?.dismiss()
-        activeFolderDialog?.dismiss()
+        closeFolderOverlay()
         isDragging = false
         longPressedView = null
     }
@@ -699,7 +872,7 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         // Close folder dialog and popups when returning to home screen
         popupMenu?.dismiss()
-        activeFolderDialog?.dismiss()
+        closeFolderOverlay()
     }
 
     override fun onDestroy() {
@@ -713,6 +886,9 @@ class MainActivity : AppCompatActivity() {
             .filter { it.activityInfo.packageName != packageName }
     }
 
+    /**
+     * Asynchronously refreshes launcher apps list and updates UI.
+     */
     @SuppressLint("NotifyDataSetChanged")
     fun refreshApps() {
         refreshJob?.cancel()
@@ -766,7 +942,7 @@ class MainActivity : AppCompatActivity() {
                 if (newApps.isNotEmpty()) {
                     // Find first non-folder, non-action item position to insert new apps
                     var insertIndex = newItems.indexOfFirst { it is ResolveInfo }
-                    if (insertIndex == -1) { // If no apps, add at the end
+                    if (insertIndex == -1) {
                         insertIndex = newItems.size
                     }
 
@@ -809,7 +985,7 @@ class MainActivity : AppCompatActivity() {
                     apps.filter { app -> folder.apps.contains(app.activityInfo.packageName) }
                 activeFolderAdapter?.updateItems(ArrayList(folderAppsResolved))
                 if (folder.apps.isEmpty()) {
-                    activeFolderDialog?.dismiss()
+                    closeFolderOverlay()
                 }
             }
 
@@ -879,12 +1055,11 @@ class MainActivity : AppCompatActivity() {
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit { putString(LAYOUT_KEY, layoutString) }
     }
 
-    @SuppressLint("NotifyDataSetChanged", "ClickableViewAccessibility")
-    internal fun showFolderDialog(folder: Folder) {
-        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_folder_view, null)
-        val folderTitle = dialogView.findViewById<TextView>(R.id.folder_title)
-        val folderAppsList = dialogView.findViewById<RecyclerView>(R.id.apps_list)
-
+    /**
+     * Displays the in-window folder overlay for the specified folder object.
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    internal fun showFolderOverlay(folder: Folder) {
         folderTitle.text = folder.name
         
         // Calculate span count for the folder dialog
@@ -903,44 +1078,34 @@ class MainActivity : AppCompatActivity() {
 
         folderAppsList.layoutManager = GridLayoutManager(this, spanCount, GridLayoutManager.VERTICAL, false)
 
-        val dialog = AlertDialog.Builder(this).setView(dialogView).create()
-
         val folderAppsResolved = folder.apps.mapNotNull { cachedApps[it] }.toMutableList()
 
-        val adapter = AppsAdapter(this, ArrayList(folderAppsResolved), true)
+        val adapter = AppsAdapter(this, ArrayList(folderAppsResolved), isFolderAdapter = true)
         folderAppsList.adapter = adapter
         folderAppsList.setOnTouchListener(appTouchListener)
-        folderAppsList.setOnDragListener(appDragListener) // Restore reordering
-
-        // Shield the dialog content area so drops on title/padding do nothing
-        dialogView.setOnDragListener { _, event ->
-            if (event.action == DragEvent.ACTION_DRAG_STARTED) {
-                event.clipDescription.hasMimeType("vnd.android.cursor.item/app")
-            } else true // Consume all other events, including ACTION_DROP
-        }
+        folderAppsList.setOnDragListener(appDragListener)
 
         activeFolder = folder
         activeFolderAdapter = adapter
-        activeFolderDialog = dialog
 
-        dialog.setOnDismissListener {
-            activeFolder = null
-            activeFolderAdapter = null
-            activeFolderDialog = null
-            refreshApps()
-        }
-
-        dialog.show()
-        
-        // Fix width to prevent the dialog from expanding to fill the screen
-        val width = (resources.displayMetrics.widthPixels * 0.9).toInt()
-        dialog.window?.setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT)
-        
-        // Handle drops on the dimmed background area (the window scrim)
-        dialog.window?.decorView?.setOnDragListener(appDragListener)
+        folderOverlay.visibility = View.VISIBLE
     }
 
-    @SuppressLint("NotifyDataSetChanged")
+    /**
+     * Closes the active folder overlay.
+     */
+    internal fun closeFolderOverlay() {
+        if (::folderOverlay.isInitialized && folderOverlay.isVisible) {
+            folderOverlay.visibility = View.GONE
+            activeFolder = null
+            activeFolderAdapter = null
+            refreshApps()
+        }
+    }
+
+    /**
+     * Empties the specified folder and moves all its contained apps to the main list.
+     */
     internal fun emptyFolder(folder: Folder) {
         val folderIndex = items.indexOf(folder)
         if (folderIndex == -1) return
@@ -948,17 +1113,21 @@ class MainActivity : AppCompatActivity() {
         val appsFromFolder = folder.apps.mapNotNull { cachedApps[it] }
 
         items.removeAt(folderIndex)
-        items.addAll(folderIndex, appsFromFolder) // Insert apps at the folder's previous position
+        appsList.adapter?.notifyItemRemoved(folderIndex)
 
-        appsList.adapter?.notifyDataSetChanged()
+        items.addAll(folderIndex, appsFromFolder)
+        appsList.adapter?.notifyItemRangeInserted(folderIndex, appsFromFolder.size)
 
         if (activeFolder == folder) {
-            activeFolderDialog?.dismiss()
+            closeFolderOverlay()
         }
 
         saveAppOrder()
     }
 
+    /**
+     * Empties all folders and returns all apps to the main list grid.
+     */
     @SuppressLint("NotifyDataSetChanged")
     internal fun emptyAllFolders() {
         val folders = items.filterIsInstance<Folder>().toList()
@@ -968,14 +1137,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         val newItems = items.toMutableList()
-        var appsAdded = 0
         for (folder in folders) {
             val folderIndex = newItems.indexOf(folder)
             if (folderIndex != -1) {
                 val appsFromFolder = folder.apps.mapNotNull { cachedApps[it] }
                 newItems.removeAt(folderIndex)
                 newItems.addAll(folderIndex, appsFromFolder)
-                appsAdded += appsFromFolder.size
             }
         }
 
@@ -984,19 +1151,16 @@ class MainActivity : AppCompatActivity() {
 
         appsList.adapter?.notifyDataSetChanged()
 
-        // If an active folder was emptied as part of this, dismiss it
-        activeFolder?.let { folder ->
-            if (folder.apps.isEmpty() || !items.contains(folder)) {
-                activeFolderDialog?.dismiss()
-            }
-        }
+        closeFolderOverlay()
 
         saveAppOrder()
 
         Toast.makeText(this, "All folders have been emptied.", Toast.LENGTH_SHORT).show()
     }
 
-    @SuppressLint("NotifyDataSetChanged")
+    /**
+     * Removes an app from its parent folder and adds it directly to the main list.
+     */
     internal fun removeAppFromFolder(app: ResolveInfo) {
         val folder =
             items.find { it is Folder && it.apps.contains(app.activityInfo.packageName) } as? Folder
@@ -1005,7 +1169,6 @@ class MainActivity : AppCompatActivity() {
 
         folder.apps.remove(app.activityInfo.packageName)
         
-        // Surgical update for the main list instead of notifyDataSetChanged()
         val insertPos = if (folderIndex != -1) folderIndex + 1 else items.size
         items.add(insertPos, app)
         appsList.adapter?.notifyItemInserted(insertPos)
@@ -1017,15 +1180,15 @@ class MainActivity : AppCompatActivity() {
                 appsList.adapter?.notifyItemRemoved(idx)
             }
             if (activeFolder == folder) {
-                activeFolderDialog?.dismiss()
+                closeFolderOverlay()
             }
-        } else if (activeFolder == folder) {
-            val folderAppsResolved = folder.apps.mapNotNull { cachedApps[it] }
-            activeFolderAdapter?.updateItems(ArrayList(folderAppsResolved))
-            
-            // Notify main list that folder icon changed
+        } else {
             if (folderIndex != -1) {
                 appsList.adapter?.notifyItemChanged(folderIndex)
+            }
+            if (activeFolder == folder) {
+                val folderAppsResolved = folder.apps.mapNotNull { cachedApps[it] }
+                activeFolderAdapter?.updateItems(ArrayList(folderAppsResolved))
             }
         }
 
