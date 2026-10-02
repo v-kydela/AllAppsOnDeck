@@ -350,6 +350,29 @@ class MainActivity : AppCompatActivity() {
         // Set default grid layout manager
         appsList.layoutManager = GridLayoutManager(this, 4, GridLayoutManager.VERTICAL, true)
 
+        fun updateAppsListSpanCount(view: View) {
+            val width = view.width
+            if (width > 0) {
+                val density = resources.displayMetrics.density
+                val usableWidthPx = width - view.paddingLeft - view.paddingRight
+                val usableWidthDp = usableWidthPx / density
+
+                val itemWidthDp = resources.getDimension(R.dimen.grid_item_width) / density
+                val spanCount = (usableWidthDp / itemWidthDp).toInt().coerceAtLeast(4)
+
+                val currentLayout = appsList.layoutManager as? GridLayoutManager
+                if (currentLayout != null && currentLayout.spanCount != spanCount) {
+                    currentLayout.spanCount = spanCount
+                }
+            }
+        }
+
+        appsList.addOnLayoutChangeListener { view, left, _, right, _, oldLeft, _, oldRight, _ ->
+            if (right - left != oldRight - oldLeft) {
+                updateAppsListSpanCount(view)
+            }
+        }
+
         // Dynamically recalculate padding and grid span count based on display insets and usable screen width
         ViewCompat.setOnApplyWindowInsetsListener(appsList) { view, insets ->
             // Using getInsetsIgnoringVisibility ensures that we reserve space for the system bars
@@ -386,6 +409,8 @@ class MainActivity : AppCompatActivity() {
             } else {
                 appsList.layoutManager = GridLayoutManager(this, spanCount, GridLayoutManager.VERTICAL, true)
             }
+
+            view.post { updateAppsListSpanCount(view) }
             
             insets
         }
@@ -1077,6 +1102,22 @@ class MainActivity : AppCompatActivity() {
         val spanCount = (usableWidthDp / itemWidthDp).toInt().coerceAtLeast(3)
 
         folderAppsList.layoutManager = GridLayoutManager(this, spanCount, GridLayoutManager.VERTICAL, false)
+
+        folderAppsList.addOnLayoutChangeListener { view, left, _, right, _, oldLeft, _, oldRight, _ ->
+            val width = right - left
+            if (width > 0 && width != (oldRight - oldLeft)) {
+                val densityVal = resources.displayMetrics.density
+                val usableWidthPx = width - view.paddingLeft - view.paddingRight
+                val usableDp = usableWidthPx / densityVal
+                val itemWidth = resources.getDimension(R.dimen.folder_grid_item_width) / densityVal
+                val span = (usableDp / itemWidth).toInt().coerceAtLeast(3)
+
+                val currentLayout = folderAppsList.layoutManager as? GridLayoutManager
+                if (currentLayout != null && currentLayout.spanCount != span) {
+                    currentLayout.spanCount = span
+                }
+            }
+        }
 
         val folderAppsResolved = folder.apps.mapNotNull { cachedApps[it] }.toMutableList()
 
