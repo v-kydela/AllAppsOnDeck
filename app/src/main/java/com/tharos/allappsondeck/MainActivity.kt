@@ -41,7 +41,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
-import kotlin.math.max
 
 /**
  * Main activity for All Apps On Deck launcher.
@@ -179,54 +178,333 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Drag listener attached to the main list container for handling drops on background empty space
-     * and restoring view visibilities when a drag gesture ends.
-     */
-    private val appDragListener = View.OnDragListener { _, event ->
+    data class DragHitResult(
+        val view: View,
+        val viewHolder: RecyclerView.ViewHolder,
+        val position: Int,
+        val rect: android.graphics.Rect,
+        val isLeft: Boolean,
+        val isRight: Boolean,
+        val isMiddle: Boolean
+    )
+
+    private fun hitTestRecyclerView(
+        rootX: Float,
+        rootY: Float,
+        recyclerView: RecyclerView,
+        canDropInMiddle: Boolean
+    ): DragHitResult? {
+        val root = findViewById<ViewGroup>(R.id.main_root) ?: return null
+        val rx = rootX.toInt()
+        val ry = rootY.toInt()
+
+        for (i in 0 until recyclerView.childCount) {
+            val child = recyclerView.getChildAt(i) ?: continue
+            if (!child.isVisible) continue
+
+            val rect = android.graphics.Rect()
+            child.getDrawingRect(rect)
+            try {
+                root.offsetDescendantRectToMyCoords(child, rect)
+            } catch (_: Exception) {
+                continue
+            }
+
+            if (rect.contains(rx, ry)) {
+                val vh = recyclerView.getChildViewHolder(child) ?: continue
+                val pos = vh.bindingAdapterPosition
+                if (pos == RecyclerView.NO_POSITION) continue
+
+                val relX = rootX - rect.left
+                val width = rect.width().toFloat()
+                val oneThird = width / 3f
+
+                val isLeft = relX <= oneThird
+                val isRight = relX >= width - oneThird
+                val allowMiddle = canDropInMiddle && when (vh) {
+                    is AppsAdapter.AppViewHolder -> !((recyclerView.adapter as? AppsAdapter)?.isFolderAdapter ?: false)
+                    is AppsAdapter.FolderViewHolder -> true
+                    else -> false
+                }
+                val isMiddle = allowMiddle && !isLeft && !isRight
+
+                return DragHitResult(child, vh, pos, rect, isLeft, isRight, isMiddle)
+            }
+        }
+        return null
+    }
+
+    private fun clearDragVisuals() {
+        val caret = findViewById<View>(R.id.drop_caret)
+        caret?.visibility = View.INVISIBLE
+
+        for (i in 0 until appsList.childCount) {
+            appsList.getChildAt(i)?.alpha = 1.0f
+        }
+        if (::folderAppsList.isInitialized) {
+            for (i in 0 until folderAppsList.childCount) {
+                folderAppsList.getChildAt(i)?.alpha = 1.0f
+            }
+        }
+    }
+
+    private val mainRootDragListener = View.OnDragListener { _, event ->
         when (event.action) {
             DragEvent.ACTION_DRAG_STARTED -> {
-                // Accept drags for apps, folders, and actions
                 val mimeTypes = event.clipDescription
-                mimeTypes?.hasMimeType("vnd.android.cursor.item/app") == true || 
-                mimeTypes?.hasMimeType("vnd.android.cursor.item/folder") == true ||
-                mimeTypes?.hasMimeType("vnd.android.cursor.item/action") == true
+                val accepts = mimeTypes?.hasMimeType("vnd.android.cursor.item/app") == true ||
+                        mimeTypes?.hasMimeType("vnd.android.cursor.item/folder") == true ||
+                        mimeTypes?.hasMimeType("vnd.android.cursor.item/action") == true
+                if (accepts) {
+                    popupMenu?.dismiss()
+                    isDragging = true
+                }
+                accepts
             }
+
+            DragEvent.ACTION_DRAG_LOCATION -> {
+                val rootX = event.x
+                val rootY = event.y
+
+                // 1. Check if drag moved outside folderCard when folder overlay is open
+                if (folderOverlay.isVisible && activeFolder != null) {
+                    val root = findViewById<ViewGroup>(R.id.main_root)
+                    if (root != null) {
+                        val cardRect = android.graphics.Rect()
+                        folderCard.getDrawingRect(cardRect)
+                        try {
+                            root.offsetDescendantRectToMyCoords(folderCard, cardRect)
+                            if (!cardRect.contains(rootX.toInt(), rootY.toInt())) {
+                                closeFolderOverlay(refresh = false)
+                            }
+                        } catch (_: Exception) {}
+                    }
+                }
+
+                // 2. Determine target RecyclerView
+                val targetRv = if (folderOverlay.isVisible && activeFolder != null) folderAppsList else appsList
+                val isDraggingApp = event.clipDescription?.hasMimeType("vnd.android.cursor.item/app") ?: false
+
+                // 3. Reset alphas
+                clearDragVisuals()
+
+                // 4. Hit test
+                val hit = hitTestRecyclerView(rootX, rootY, targetRv, isDraggingApp)
+                if (hit != null) {
+                    if (hit.isMiddle) {
+                        hit.view.alpha = 0.5f
+                    } else {
+                        val caret = findViewById<View>(R.id.drop_caret)
+                        if (caret != null) {
+                            val caretWidthPx = (4 * resources.displayMetrics.density).toInt()
+                            val caretX = if (hit.isLeft) hit.rect.left else hit.rect.right
+                            caret.x = caretX.toFloat() - (caretWidthPx / 2f)
+                            caret.y = hit.rect.top.toFloat()
+                            if (caret.layoutParams.height != hit.rect.height()) {
+                                caret.layoutParams.height = hit.rect.height()
+                                caret.requestLayout()
+                            }
+                            caret.visibility = View.VISIBLE
+                        }
+                    }
+                }
+                true
+            }
+
             DragEvent.ACTION_DROP -> {
                 val dragData = event.localState as? DragData ?: return@OnDragListener false
-                val item = dragData.item
+                val rootX = event.x
+                val rootY = event.y
 
-                if (dragData.sourceFolder != null && item is ResolveInfo) {
+                clearDragVisuals()
+
+                val targetRv = if (folderOverlay.isVisible && activeFolder != null) folderAppsList else appsList
+                val targetAdapter = targetRv.adapter as? AppsAdapter ?: return@OnDragListener false
+                val isDraggingApp = event.clipDescription?.hasMimeType("vnd.android.cursor.item/app") ?: false
+
+                val hit = hitTestRecyclerView(rootX, rootY, targetRv, isDraggingApp)
+
+                val handled = if (hit != null) {
+                    if (hit.isMiddle) {
+                        executeSpecificDrop(dragData, targetAdapter, hit.position)
+                    } else {
+                        val targetPos = if (hit.isLeft) hit.position else hit.position + 1
+                        executePositionDrop(dragData, targetAdapter, targetPos)
+                    }
+                } else {
+                    executePositionDrop(dragData, targetAdapter, targetAdapter.itemCount)
+                }
+
+                handled
+            }
+
+            DragEvent.ACTION_DRAG_ENDED -> {
+                clearDragVisuals()
+                val dragData = event.localState as? DragData
+                val view = dragData?.dragView ?: longPressedView
+                view?.post {
+                    view.visibility = View.VISIBLE
+                }
+                isDragging = false
+                longPressedView = null
+                appsList.post {
+                    refreshApps()
+                }
+                true
+            }
+
+            else -> true
+        }
+    }
+
+    internal fun executePositionDrop(dragData: DragData, targetAdapter: AppsAdapter, targetPos: Int): Boolean {
+        val item = dragData.item
+        val sourceFolder = dragData.sourceFolder
+        val isFolderAdapter = targetAdapter.isFolderAdapter
+
+        if (isFolderAdapter) {
+            if (sourceFolder != null && item is ResolveInfo) {
+                val fromIndex = dragData.sourcePosition
+                if (fromIndex != -1 && fromIndex < sourceFolder.apps.size) {
+                    if (fromIndex == targetPos || fromIndex == targetPos - 1) return true
+
+                    val pkg = sourceFolder.apps.removeAt(fromIndex)
+                    val finalPos = if (fromIndex < targetPos) targetPos - 1 else targetPos
+                    val clampedPos = finalPos.coerceIn(0, sourceFolder.apps.size)
+                    sourceFolder.apps.add(clampedPos, pkg)
+
+                    val movedItem = targetAdapter.items.removeAt(fromIndex)
+                    targetAdapter.items.add(clampedPos, movedItem)
+
+                    targetAdapter.notifyItemMoved(fromIndex, clampedPos)
+                    saveAppOrder()
+                    return true
+                }
+            }
+            return false
+        } else {
+            if (sourceFolder != null) {
+                // Dragged OUT of a folder onto the main activity list
+                if (item is ResolveInfo) {
                     val pkg = item.activityInfo.packageName
-                    dragData.sourceFolder.apps.remove(pkg)
-                    if (dragData.sourceFolder.apps.isEmpty()) {
-                        val folderIdx = items.indexOf(dragData.sourceFolder)
+                    sourceFolder.apps.remove(pkg)
+
+                    val folderIdx = items.indexOf(sourceFolder)
+                    val folderRemoved = sourceFolder.apps.isEmpty()
+                    if (folderRemoved) {
                         if (folderIdx != -1) {
                             items.removeAt(folderIdx)
                             appsList.adapter?.notifyItemRemoved(folderIdx)
                         }
+                    } else if (folderIdx != -1) {
+                        appsList.adapter?.notifyItemChanged(folderIdx)
                     }
-                    val newIndex = items.size
-                    items.add(item)
-                    appsList.adapter?.notifyItemInserted(newIndex)
+
+                    val adjustedTarget = if (folderRemoved && folderIdx != -1 && folderIdx < targetPos) targetPos - 1 else targetPos
+                    val clampedPos = adjustedTarget.coerceIn(0, items.size)
+                    items.add(clampedPos, item)
+                    appsList.adapter?.notifyItemInserted(clampedPos)
+
                     saveAppOrder()
-                    true
-                } else false
-            }
-            DragEvent.ACTION_DRAG_ENDED -> {
-                val dragData = event.localState as? DragData
-                val view = dragData?.dragView ?: event.localState as? View
-                view?.post {
-                    view.visibility = View.VISIBLE
-                    // Sometimes a forced requestLayout on the parent helps stabilize Dialogs
-                    (view.parent as? View)?.requestLayout()
+                    return true
                 }
-                isDragging = false
-                longPressedView = null
-                true
+            } else {
+                // Dragged within main list
+                val fromIndex = dragData.sourcePosition
+                if (fromIndex != -1 && fromIndex < items.size) {
+                    if (fromIndex == targetPos || fromIndex == targetPos - 1) return true
+
+                    val finalPos = if (fromIndex < targetPos) targetPos - 1 else targetPos
+                    val clampedPos = finalPos.coerceIn(0, items.size)
+                    items.add(clampedPos, item)
+
+                    appsList.adapter?.notifyItemMoved(fromIndex, clampedPos)
+                    saveAppOrder()
+                    return true
+                }
             }
-            else -> true
         }
+        return false
+    }
+
+    internal fun executeSpecificDrop(dragData: DragData, targetAdapter: AppsAdapter, toPosition: Int): Boolean {
+        if (targetAdapter.isFolderAdapter) return false
+        val fromItem = dragData.item
+        val toItem = targetAdapter.items.getOrNull(toPosition) ?: return false
+
+        if (fromItem is ResolveInfo && toItem is ResolveInfo) {
+            val sourceFolder = dragData.sourceFolder
+            val fromPkg = fromItem.activityInfo.packageName
+            val toPkg = toItem.activityInfo.packageName
+
+            if (sourceFolder != null) {
+                sourceFolder.apps.remove(fromPkg)
+                val folderIdx = items.indexOf(sourceFolder)
+                if (sourceFolder.apps.isEmpty()) {
+                    if (folderIdx != -1) {
+                        items.removeAt(folderIdx)
+                        appsList.adapter?.notifyItemRemoved(folderIdx)
+                    }
+                } else if (folderIdx != -1) {
+                    appsList.adapter?.notifyItemChanged(folderIdx)
+                }
+            } else {
+                val fromPos = dragData.sourcePosition
+                if (fromPos != -1 && fromPos < items.size) {
+                    items.removeAt(fromPos)
+                    appsList.adapter?.notifyItemRemoved(fromPos)
+                }
+            }
+
+            val targetIndex = items.indexOf(toItem)
+            if (targetIndex != -1) {
+                val folderApps = mutableListOf(toPkg, fromPkg)
+                val suggestedName = getFolderNameForApps(folderApps)
+                val newFolder = Folder(suggestedName, folderApps)
+                items[targetIndex] = newFolder
+                appsList.adapter?.notifyItemChanged(targetIndex)
+            }
+
+            saveAppOrder()
+            return true
+        } else if (fromItem is ResolveInfo && toItem is Folder) {
+            val sourceFolder = dragData.sourceFolder
+            val fromPkg = fromItem.activityInfo.packageName
+
+            if (sourceFolder == toItem) return false
+
+            if (sourceFolder != null) {
+                sourceFolder.apps.remove(fromPkg)
+                val folderIdx = items.indexOf(sourceFolder)
+                if (sourceFolder.apps.isEmpty()) {
+                    if (folderIdx != -1) {
+                        items.removeAt(folderIdx)
+                        appsList.adapter?.notifyItemRemoved(folderIdx)
+                    }
+                } else if (folderIdx != -1) {
+                    appsList.adapter?.notifyItemChanged(folderIdx)
+                }
+            } else {
+                val fromPos = dragData.sourcePosition
+                if (fromPos != -1 && fromPos < items.size) {
+                    items.removeAt(fromPos)
+                    appsList.adapter?.notifyItemRemoved(fromPos)
+                }
+            }
+
+            if (!toItem.apps.contains(fromPkg)) {
+                toItem.apps.add(fromPkg)
+            }
+
+            val targetIndex = items.indexOf(toItem)
+            if (targetIndex != -1) {
+                appsList.adapter?.notifyItemChanged(targetIndex)
+            }
+
+            saveAppOrder()
+            return true
+        }
+        return false
     }
 
     // BroadcastReceiver for app install / uninstall / update events
@@ -294,58 +572,8 @@ class MainActivity : AppCompatActivity() {
             // Consume clicks inside the folder card
         }
 
-        // Consume drag events inside folder card so folder doesn't close while dragging within card
-        folderCard.setOnDragListener { _, event ->
-            when (event.action) {
-                DragEvent.ACTION_DRAG_STARTED -> {
-                    val mimeTypes = event.clipDescription
-                    mimeTypes?.hasMimeType("vnd.android.cursor.item/app") == true ||
-                    mimeTypes?.hasMimeType("vnd.android.cursor.item/folder") == true ||
-                    mimeTypes?.hasMimeType("vnd.android.cursor.item/action") == true
-                }
-                DragEvent.ACTION_DROP -> false
-                else -> true
-            }
-        }
-
-        // Detect dragging OUTSIDE folder card onto scrim background to close folder overlay seamlessly
-        folderOverlay.setOnDragListener { _, event ->
-            when (event.action) {
-                DragEvent.ACTION_DRAG_STARTED -> {
-                    val mimeTypes = event.clipDescription
-                    mimeTypes?.hasMimeType("vnd.android.cursor.item/app") == true ||
-                    mimeTypes?.hasMimeType("vnd.android.cursor.item/folder") == true ||
-                    mimeTypes?.hasMimeType("vnd.android.cursor.item/action") == true
-                }
-                DragEvent.ACTION_DRAG_ENTERED, DragEvent.ACTION_DRAG_LOCATION -> {
-                    val dragData = event.localState as? DragData
-                    if (dragData != null && activeFolder != null) {
-                        closeFolderOverlay()
-                    }
-                    true
-                }
-                DragEvent.ACTION_DROP -> {
-                    val dragData = event.localState as? DragData
-                    if (dragData != null && dragData.sourceFolder != null && dragData.item is ResolveInfo) {
-                        val pkg = dragData.item.activityInfo.packageName
-                        dragData.sourceFolder.apps.remove(pkg)
-                        if (dragData.sourceFolder.apps.isEmpty()) {
-                            val folderIdx = items.indexOf(dragData.sourceFolder)
-                            if (folderIdx != -1) {
-                                items.removeAt(folderIdx)
-                                appsList.adapter?.notifyItemRemoved(folderIdx)
-                            }
-                        }
-                        val newIndex = items.size
-                        items.add(dragData.item)
-                        appsList.adapter?.notifyItemInserted(newIndex)
-                        saveAppOrder()
-                        true
-                    } else false
-                }
-                else -> true
-            }
-        }
+        val mainRoot = findViewById<View>(R.id.main_root)
+        mainRoot?.setOnDragListener(mainRootDragListener)
 
         // Set default grid layout manager
         appsList.layoutManager = GridLayoutManager(this, 4, GridLayoutManager.VERTICAL, true)
@@ -375,24 +603,19 @@ class MainActivity : AppCompatActivity() {
 
         // Dynamically recalculate padding and grid span count based on display insets and usable screen width
         ViewCompat.setOnApplyWindowInsetsListener(appsList) { view, insets ->
-            // Using getInsetsIgnoringVisibility ensures that we reserve space for the system bars
-            // even if they are currently hidden or transitioning, preventing the "jump" or flicker.
             val systemBars = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
             val displayCutout = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
             
             val density = resources.displayMetrics.density
             val horizontalPadding = (12 * density).toInt()
 
-            val paddingLeft = max(systemBars.left, displayCutout.left) + horizontalPadding
-            val paddingTop = max(systemBars.top, displayCutout.top)
-            val paddingRight = max(systemBars.right, displayCutout.right) + horizontalPadding
-            val paddingBottom = max(systemBars.bottom, displayCutout.bottom)
+            val paddingLeft = kotlin.math.max(systemBars.left, displayCutout.left) + horizontalPadding
+            val paddingTop = kotlin.math.max(systemBars.top, displayCutout.top)
+            val paddingRight = kotlin.math.max(systemBars.right, displayCutout.right) + horizontalPadding
+            val paddingBottom = kotlin.math.max(systemBars.bottom, displayCutout.bottom)
 
-            // Padding the RecyclerView itself with clipToPadding="false" (set in XML)
-            // allows it to remain full-screen while keeping content clear of system bars.
             view.updatePadding(paddingLeft, paddingTop, paddingRight, paddingBottom)
             
-            // Recalculate span count using the new usable width
             val screenWidthPx = resources.displayMetrics.widthPixels
             val usableWidthPx = screenWidthPx - paddingLeft - paddingRight
             val usableWidthDp = usableWidthPx / density
@@ -400,7 +623,6 @@ class MainActivity : AppCompatActivity() {
             val itemWidthDp = resources.getDimension(R.dimen.grid_item_width) / density
             val spanCount = (usableWidthDp / itemWidthDp).toInt().coerceAtLeast(4)
             
-            // Update spanCount without recreating the LayoutManager to avoid unnecessary re-layouts
             val currentLayout = appsList.layoutManager as? GridLayoutManager
             if (currentLayout != null) {
                 if (currentLayout.spanCount != spanCount) {
@@ -420,8 +642,8 @@ class MainActivity : AppCompatActivity() {
             val systemBars = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
             val displayCutout = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
 
-            val paddingTop = max(systemBars.top, displayCutout.top)
-            val paddingBottom = max(systemBars.bottom, displayCutout.bottom)
+            val paddingTop = kotlin.math.max(systemBars.top, displayCutout.top)
+            val paddingBottom = kotlin.math.max(systemBars.bottom, displayCutout.bottom)
 
             view.updatePadding(top = paddingTop, bottom = paddingBottom)
             insets
@@ -434,7 +656,6 @@ class MainActivity : AppCompatActivity() {
             this, refreshReceiver, intentFilter, ContextCompat.RECEIVER_NOT_EXPORTED
         )
         appsList.setOnTouchListener(appTouchListener)
-        appsList.setOnDragListener(appDragListener)
     }
 
     /**
@@ -1124,7 +1345,6 @@ class MainActivity : AppCompatActivity() {
         val adapter = AppsAdapter(this, ArrayList(folderAppsResolved), isFolderAdapter = true)
         folderAppsList.adapter = adapter
         folderAppsList.setOnTouchListener(appTouchListener)
-        folderAppsList.setOnDragListener(appDragListener)
 
         activeFolder = folder
         activeFolderAdapter = adapter
@@ -1135,12 +1355,14 @@ class MainActivity : AppCompatActivity() {
     /**
      * Closes the active folder overlay.
      */
-    internal fun closeFolderOverlay() {
+    internal fun closeFolderOverlay(refresh: Boolean = true) {
         if (::folderOverlay.isInitialized && folderOverlay.isVisible) {
             folderOverlay.visibility = View.GONE
             activeFolder = null
             activeFolderAdapter = null
-            refreshApps()
+            if (refresh && !isDragging) {
+                refreshApps()
+            }
         }
     }
 
