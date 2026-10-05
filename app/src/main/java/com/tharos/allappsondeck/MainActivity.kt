@@ -1232,8 +1232,7 @@ class MainActivity : AppCompatActivity() {
 
             // Update active folder if it exists
             activeFolder?.let { folder ->
-                val folderAppsResolved =
-                    apps.filter { app -> folder.apps.contains(app.activityInfo.packageName) }
+                val folderAppsResolved = folder.apps.mapNotNull { cachedApps[it] }
                 activeFolderAdapter?.updateItems(ArrayList(folderAppsResolved))
                 if (folder.apps.isEmpty()) {
                     closeFolderOverlay()
