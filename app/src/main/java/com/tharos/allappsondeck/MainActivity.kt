@@ -593,6 +593,8 @@ class MainActivity : AppCompatActivity() {
         mainRoot?.setOnDragListener(mainRootDragListener)
 
         // Set default grid layout manager
+        appsList.setHasFixedSize(true)
+        appsList.setItemViewCacheSize(20)
         appsList.layoutManager = GridLayoutManager(this, 4, GridLayoutManager.VERTICAL, true)
 
         fun updateAppsListSpanCount(view: View) {
@@ -1126,7 +1128,7 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         // Close menus, dialogs, and reset drag states when returning home
         popupMenu?.dismiss()
-        closeFolderOverlay()
+        closeFolderOverlay(refresh = false)
         isDragging = false
         longPressedView = null
     }
@@ -1135,7 +1137,7 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         // Close folder dialog and popups when returning to home screen
         popupMenu?.dismiss()
-        closeFolderOverlay()
+        closeFolderOverlay(refresh = false)
     }
 
     override fun onDestroy() {
@@ -1164,6 +1166,21 @@ class MainActivity : AppCompatActivity() {
                 val installedPackages = newAppMap.keys
                 iconCache.keys.retainAll(installedPackages)
                 labelCache.keys.retainAll(installedPackages)
+
+                // Pre-warm icons and labels on IO thread
+                installed.forEach { app ->
+                    val pkg = app.activityInfo.packageName
+                    if (!iconCache.containsKey(pkg)) {
+                        try {
+                            iconCache[pkg] = app.loadIcon(packageManager)
+                        } catch (_: Exception) {}
+                    }
+                    if (!labelCache.containsKey(pkg)) {
+                        try {
+                            labelCache[pkg] = app.loadLabel(packageManager).toString()
+                        } catch (_: Exception) {}
+                    }
+                }
 
                 installed to newAppMap
             }
@@ -1225,29 +1242,12 @@ class MainActivity : AppCompatActivity() {
                 appsList.adapter?.notifyDataSetChanged()
             }
 
-            // Background pre-warming (Icons & Labels) - DO NOT WAIT for this in the main refresh flow
-            lifecycleScope.launch(Dispatchers.IO) {
-                apps.forEach { app ->
-                    val pkg = app.activityInfo.packageName
-                    if (!iconCache.containsKey(pkg)) {
-                        iconCache[pkg] = app.loadIcon(packageManager)
-                    }
-                    if (!labelCache.containsKey(pkg)) {
-                        labelCache[pkg] = app.loadLabel(packageManager).toString()
-                    }
-                }
-                withContext(Dispatchers.Main) {
-                    appsList.adapter?.notifyDataSetChanged()
-                    activeFolderAdapter?.notifyDataSetChanged()
-                }
-            }
-
             // Update active folder if it exists
             activeFolder?.let { folder ->
                 val folderAppsResolved = folder.apps.mapNotNull { cachedApps[it] }
                 activeFolderAdapter?.updateItems(ArrayList(folderAppsResolved))
                 if (folder.apps.isEmpty()) {
-                    closeFolderOverlay()
+                    closeFolderOverlay(refresh = false)
                 }
             }
 
@@ -1338,6 +1338,8 @@ class MainActivity : AppCompatActivity() {
         val itemWidthDp = resources.getDimension(R.dimen.folder_grid_item_width) / density
         val spanCount = (usableWidthDp / itemWidthDp).toInt().coerceAtLeast(3)
 
+        folderAppsList.setHasFixedSize(true)
+        folderAppsList.setItemViewCacheSize(20)
         folderAppsList.layoutManager = GridLayoutManager(this, spanCount, GridLayoutManager.VERTICAL, false)
 
         folderAppsList.addOnLayoutChangeListener { view, left, _, right, _, oldLeft, _, oldRight, _ ->

@@ -117,18 +117,31 @@ class AppsAdapter(
                 val item = items[pos]
                 if (item is ResolveInfo) {
                     val packageName = item.activityInfo.packageName
-                    val launchIntent = mainActivity.packageManager.getLaunchIntentForPackage(packageName)
+                    val activityName = item.activityInfo.name
+                    val launchIntent = if (!activityName.isNullOrEmpty()) {
+                        android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
+                            addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+                            setClassName(packageName, activityName)
+                            addFlags(
+                                android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                                android.content.Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+                            )
+                        }
+                    } else {
+                        mainActivity.packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                            addFlags(
+                                android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                                android.content.Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+                            )
+                        }
+                    }
                     if (launchIntent != null) {
-                        launchIntent.addFlags(
-                            android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
-                            android.content.Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
-                        )
                         val options = androidx.core.app.ActivityOptionsCompat.makeScaleUpAnimation(
                             itemView, 0, 0, itemView.width, itemView.height
                         ).toBundle()
                         mainActivity.startActivity(launchIntent, options)
                         // Close folder dialog if it's open
-                        mainActivity.closeFolderOverlay()
+                        mainActivity.closeFolderOverlay(refresh = false)
                     } else {
                         Toast.makeText(mainActivity, "App not found", Toast.LENGTH_SHORT).show()
                         mainActivity.refreshApps()

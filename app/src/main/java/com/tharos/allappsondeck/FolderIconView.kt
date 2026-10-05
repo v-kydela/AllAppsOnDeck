@@ -8,6 +8,7 @@ import android.graphics.drawable.Drawable
 import android.util.AttributeSet
 import android.view.View
 import androidx.core.graphics.toColorInt
+import androidx.core.graphics.withTranslation
 
 class FolderIconView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
@@ -22,10 +23,10 @@ class FolderIconView @JvmOverloads constructor(
 
     fun setIcons(newIcons: List<Drawable>) {
         icons.clear()
-        // Use newDrawable().mutate() to create a unique instance for the folder preview.
-        // This prevents the FolderIconView's setBounds() calls from affecting 
-        // the same drawable instances used elsewhere (like in the full folder view).
-        icons.addAll(newIcons.take(4).map { it.constantState?.newDrawable()?.mutate() ?: it })
+        // Use newDrawable() to create an independent drawable wrapper instance for the folder preview.
+        // This prevents FolderIconView's setBounds() calls from mutating the bounds of the same
+        // drawable instances used in app item ViewHolders.
+        icons.addAll(newIcons.take(4).map { it.constantState?.newDrawable() ?: it })
         invalidate()
     }
 
@@ -52,13 +53,14 @@ class FolderIconView @JvmOverloads constructor(
             val left = padding + col * (iconSize + padding)
             val top = padding + row * (iconSize + padding)
             
-            icons[i].setBounds(
-                left.toInt(),
-                top.toInt(),
-                (left + iconSize).toInt(),
-                (top + iconSize).toInt()
-            )
-            icons[i].draw(canvas)
+            val drawable = icons[i]
+            val oldBounds = drawable.copyBounds()
+            canvas.withTranslation(left, top) {
+                val iconPx = iconSize.toInt()
+                drawable.setBounds(0, 0, iconPx, iconPx)
+                drawable.draw(canvas)
+                drawable.bounds = oldBounds
+            }
         }
     }
 }
