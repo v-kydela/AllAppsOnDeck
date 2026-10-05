@@ -362,16 +362,19 @@ class MainActivity : AppCompatActivity() {
         val sourceFolder = dragData.sourceFolder
         val isFolderAdapter = targetAdapter.isFolderAdapter
 
+        if (item !is ResolveInfo) return false
+        val pkg = item.activityInfo.packageName
+
         if (isFolderAdapter) {
-            if (sourceFolder != null && item is ResolveInfo) {
+            if (sourceFolder != null) {
                 val fromIndex = dragData.sourcePosition
                 if (fromIndex != -1 && fromIndex < sourceFolder.apps.size) {
                     if (fromIndex == targetPos || fromIndex == targetPos - 1) return true
 
-                    val pkg = sourceFolder.apps.removeAt(fromIndex)
+                    val movedPkg = sourceFolder.apps.removeAt(fromIndex)
                     val finalPos = if (fromIndex < targetPos) targetPos - 1 else targetPos
                     val clampedPos = finalPos.coerceIn(0, sourceFolder.apps.size)
-                    sourceFolder.apps.add(clampedPos, pkg)
+                    sourceFolder.apps.add(clampedPos, movedPkg)
 
                     val movedItem = targetAdapter.items.removeAt(fromIndex)
                     targetAdapter.items.add(clampedPos, movedItem)
@@ -385,38 +388,41 @@ class MainActivity : AppCompatActivity() {
         } else {
             if (sourceFolder != null) {
                 // Dragged OUT of a folder onto the main activity list
-                if (item is ResolveInfo) {
-                    val pkg = item.activityInfo.packageName
-                    sourceFolder.apps.remove(pkg)
+                sourceFolder.apps.remove(pkg)
 
-                    val folderIdx = items.indexOf(sourceFolder)
-                    val folderRemoved = sourceFolder.apps.isEmpty()
-                    if (folderRemoved) {
-                        if (folderIdx != -1) {
-                            items.removeAt(folderIdx)
-                            appsList.adapter?.notifyItemRemoved(folderIdx)
-                        }
-                    } else if (folderIdx != -1) {
-                        appsList.adapter?.notifyItemChanged(folderIdx)
+                val folderIdx = items.indexOf(sourceFolder)
+                val folderRemoved = sourceFolder.apps.isEmpty()
+                if (folderRemoved) {
+                    if (folderIdx != -1) {
+                        items.removeAt(folderIdx)
+                        appsList.adapter?.notifyItemRemoved(folderIdx)
                     }
-
-                    val adjustedTarget = if (folderRemoved && folderIdx != -1 && folderIdx < targetPos) targetPos - 1 else targetPos
-                    val clampedPos = adjustedTarget.coerceIn(0, items.size)
-                    items.add(clampedPos, item)
-                    appsList.adapter?.notifyItemInserted(clampedPos)
-
-                    saveAppOrder()
-                    return true
+                } else if (folderIdx != -1) {
+                    appsList.adapter?.notifyItemChanged(folderIdx)
                 }
+
+                // Clean up any stray duplicate copy of this package before inserting
+                val existingPos = items.indexOfFirst { it is ResolveInfo && it.activityInfo.packageName == pkg }
+                if (existingPos != -1) {
+                    items.removeAt(existingPos)
+                    appsList.adapter?.notifyItemRemoved(existingPos)
+                }
+
+                val adjustedTarget = if (folderRemoved && folderIdx != -1 && folderIdx < targetPos) targetPos - 1 else targetPos
+                val clampedPos = adjustedTarget.coerceIn(0, items.size)
+                items.add(clampedPos, item)
+                appsList.adapter?.notifyItemInserted(clampedPos)
+
+                saveAppOrder()
+                return true
             } else {
                 // Dragged within main list
-                val fromIndex = dragData.sourcePosition
-                if (fromIndex != -1 && fromIndex < items.size) {
-                    if (fromIndex == targetPos || fromIndex == targetPos - 1) return true
-
+                val fromIndex = items.indexOfFirst { it is ResolveInfo && it.activityInfo.packageName == pkg }
+                if (fromIndex != -1) {
+                    val movedItem = items.removeAt(fromIndex)
                     val finalPos = if (fromIndex < targetPos) targetPos - 1 else targetPos
                     val clampedPos = finalPos.coerceIn(0, items.size)
-                    items.add(clampedPos, item)
+                    items.add(clampedPos, movedItem)
 
                     appsList.adapter?.notifyItemMoved(fromIndex, clampedPos)
                     saveAppOrder()
@@ -429,13 +435,15 @@ class MainActivity : AppCompatActivity() {
 
     internal fun executeSpecificDrop(dragData: DragData, targetAdapter: AppsAdapter, toPosition: Int): Boolean {
         if (targetAdapter.isFolderAdapter) return false
-        val fromItem = dragData.item
+        val fromItem = dragData.item as? ResolveInfo ?: return false
         val toItem = targetAdapter.items.getOrNull(toPosition) ?: return false
+        val fromPkg = fromItem.activityInfo.packageName
 
-        if (fromItem is ResolveInfo && toItem is ResolveInfo) {
-            val sourceFolder = dragData.sourceFolder
-            val fromPkg = fromItem.activityInfo.packageName
+        val sourceFolder = dragData.sourceFolder
+
+        if (toItem is ResolveInfo) {
             val toPkg = toItem.activityInfo.packageName
+            if (fromPkg == toPkg) return false
 
             if (sourceFolder != null) {
                 sourceFolder.apps.remove(fromPkg)
@@ -449,8 +457,8 @@ class MainActivity : AppCompatActivity() {
                     appsList.adapter?.notifyItemChanged(folderIdx)
                 }
             } else {
-                val fromPos = dragData.sourcePosition
-                if (fromPos != -1 && fromPos < items.size) {
+                val fromPos = items.indexOfFirst { it is ResolveInfo && it.activityInfo.packageName == fromPkg }
+                if (fromPos != -1) {
                     items.removeAt(fromPos)
                     appsList.adapter?.notifyItemRemoved(fromPos)
                 }
@@ -467,10 +475,7 @@ class MainActivity : AppCompatActivity() {
 
             saveAppOrder()
             return true
-        } else if (fromItem is ResolveInfo && toItem is Folder) {
-            val sourceFolder = dragData.sourceFolder
-            val fromPkg = fromItem.activityInfo.packageName
-
+        } else if (toItem is Folder) {
             if (sourceFolder == toItem) return false
 
             if (sourceFolder != null) {
@@ -485,8 +490,8 @@ class MainActivity : AppCompatActivity() {
                     appsList.adapter?.notifyItemChanged(folderIdx)
                 }
             } else {
-                val fromPos = dragData.sourcePosition
-                if (fromPos != -1 && fromPos < items.size) {
+                val fromPos = items.indexOfFirst { it is ResolveInfo && it.activityInfo.packageName == fromPkg }
+                if (fromPos != -1) {
                     items.removeAt(fromPos)
                     appsList.adapter?.notifyItemRemoved(fromPos)
                 }
