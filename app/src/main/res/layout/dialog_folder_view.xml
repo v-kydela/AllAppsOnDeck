@@ -30,6 +30,4 @@
         app:layout_constraintBottom_toBottomOf="parent"
         tools:listitem="@layout/app_item" />
 
-    <include layout="@layout/layout_drop_caret" />
-
 </androidx.constraintlayout.widget.ConstraintLayout>

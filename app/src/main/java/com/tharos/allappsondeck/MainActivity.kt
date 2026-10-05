@@ -195,6 +195,9 @@ class MainActivity : AppCompatActivity() {
         canDropInMiddle: Boolean
     ): DragHitResult? {
         val root = findViewById<ViewGroup>(R.id.main_root) ?: return null
+        val rootLoc = IntArray(2)
+        root.getLocationOnScreen(rootLoc)
+
         val rx = rootX.toInt()
         val ry = rootY.toInt()
 
@@ -202,21 +205,23 @@ class MainActivity : AppCompatActivity() {
             val child = recyclerView.getChildAt(i) ?: continue
             if (!child.isVisible) continue
 
-            val rect = android.graphics.Rect()
-            child.getDrawingRect(rect)
-            try {
-                root.offsetDescendantRectToMyCoords(child, rect)
-            } catch (_: Exception) {
-                continue
-            }
+            val childLoc = IntArray(2)
+            child.getLocationOnScreen(childLoc)
+
+            val left = childLoc[0] - rootLoc[0]
+            val top = childLoc[1] - rootLoc[1]
+            val right = left + child.width
+            val bottom = top + child.height
+
+            val rect = android.graphics.Rect(left, top, right, bottom)
 
             if (rect.contains(rx, ry)) {
                 val vh = recyclerView.getChildViewHolder(child) ?: continue
                 val pos = vh.bindingAdapterPosition
                 if (pos == RecyclerView.NO_POSITION) continue
 
-                val relX = rootX - rect.left
-                val width = rect.width().toFloat()
+                val relX = rootX - left
+                val width = child.width.toFloat()
                 val oneThird = width / 3f
 
                 val isLeft = relX <= oneThird
@@ -270,14 +275,21 @@ class MainActivity : AppCompatActivity() {
                 if (folderOverlay.isVisible && activeFolder != null) {
                     val root = findViewById<ViewGroup>(R.id.main_root)
                     if (root != null) {
-                        val cardRect = android.graphics.Rect()
-                        folderCard.getDrawingRect(cardRect)
-                        try {
-                            root.offsetDescendantRectToMyCoords(folderCard, cardRect)
-                            if (!cardRect.contains(rootX.toInt(), rootY.toInt())) {
-                                closeFolderOverlay(refresh = false)
-                            }
-                        } catch (_: Exception) {}
+                        val rootLoc = IntArray(2)
+                        root.getLocationOnScreen(rootLoc)
+                        val cardLoc = IntArray(2)
+                        folderCard.getLocationOnScreen(cardLoc)
+                        val cardLeft = cardLoc[0] - rootLoc[0]
+                        val cardTop = cardLoc[1] - rootLoc[1]
+                        val cardRect = android.graphics.Rect(
+                            cardLeft,
+                            cardTop,
+                            cardLeft + folderCard.width,
+                            cardTop + folderCard.height
+                        )
+                        if (!cardRect.contains(rootX.toInt(), rootY.toInt())) {
+                            closeFolderOverlay(refresh = false)
+                        }
                     }
                 }
 

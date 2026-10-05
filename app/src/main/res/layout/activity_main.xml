@@ -20,8 +20,6 @@
         app:layout_constraintTop_toTopOf="parent"
         tools:listitem="@layout/app_item" />
 
-    <include layout="@layout/layout_drop_caret" />
-
     <FrameLayout
         android:id="@+id/folder_overlay"
         android:layout_width="match_parent"
@@ -48,5 +46,7 @@
         </com.google.android.material.card.MaterialCardView>
 
     </FrameLayout>
+
+    <include layout="@layout/layout_drop_caret" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
