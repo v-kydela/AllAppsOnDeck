@@ -821,7 +821,8 @@ class MainActivity : AppCompatActivity() {
                 if (matchesKeywords(label, packageName,
                         "photo", "gallery", "camera", "editor", "video", "player", "music", "stream", "netflix",
                         "youtube", "hulu", "disney", "hbo", "spotify", "pandora", "soundcloud", "deezer",
-                        "tidal", "vlc", "plex", "jellyfin", "audible", "podcast", "cinema", "movie", "prime video"
+                        "tidal", "vlc", "plex", "jellyfin", "audible", "podcast", "cinema", "movie", "prime video",
+                        "audiobook", "audiobooks", "libby", "overdrive", "book", "books", "kindle", "nook", "reading", "reader"
                     )) categories.add(FolderCategories.MEDIA)
             }
 
@@ -875,10 +876,15 @@ class MainActivity : AppCompatActivity() {
         val pkgLower = packageName.lowercase()
         val pkgSegments = pkgLower.split(".", "_", "-")
 
+        val labelForDrive = if (labelLower.contains("overdrive")) labelLower.replace("overdrive", "") else labelLower
+
         return keywords.any { kw ->
             val kwLower = kw.lowercase()
-            if (labelLower.contains(kwLower)) return@any true
+            val effectiveLabel = if (kwLower == "drive") labelForDrive else labelLower
+
+            if (effectiveLabel.contains(kwLower)) return@any true
             pkgSegments.any { seg ->
+                if (kwLower == "drive" && seg.contains("overdrive")) return@any false
                 seg == kwLower || seg.startsWith(kwLower) || (kwLower.length >= 4 && seg.contains(kwLower))
             }
         }
