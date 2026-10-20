@@ -992,13 +992,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Automatically groups installed apps into categorized folders.
+     * Automatically groups unorganized installed apps into categorized folders while leaving existing folders intact.
      */
     @SuppressLint("NotifyDataSetChanged")
     internal fun autoOrganizeApps() {
         lifecycleScope.launch {
             val actionItem = items.find { it is GlobalActionItem }
             
+            // Snapshot existing folders state before background processing
+            val existingFolders = items.filterIsInstance<Folder>()
+                .map { Folder(it.name, it.apps.toMutableList()) }
+
             // Move heavy computation to Default dispatcher
             val result = withContext(Dispatchers.Default) {
                 ensureCategorySetsPrefetched()
@@ -1006,17 +1010,42 @@ class MainActivity : AppCompatActivity() {
                 categoryCache.clear()
                 val apps = getInstalledLauncherApps()
 
-                // 1. Get all categories for all apps
-                val appToCategories = apps.associateWith { getAppCategories(it.activityInfo.packageName) }
+                // Package names already in existing folders
+                val folderedPackageNames = existingFolders.flatMap { it.apps }.toSet()
 
-                // 2. Count potential members for each category
-                val potentialCounts = mutableMapOf<String, Int>()
-                appToCategories.values.flatten().forEach {
-                    potentialCounts[it] = (potentialCounts[it] ?: 0) + 1
+                // Helper to determine primary category of an existing folder
+                fun getFolderCategory(folder: Folder): String {
+                    val nameMatch = FolderCategories.ALL_CATEGORIES.find { it.equals(folder.name, ignoreCase = true) }
+                    if (nameMatch != null) return nameMatch
+                    val derivedCat = getFolderNameForApps(folder.apps)
+                    if (derivedCat != FolderCategories.DEFAULT_FOLDER_NAME) return derivedCat
+                    return folder.name
                 }
 
-                // 3. Keep only categories that have at least 2 potential members
-                val validCategories = potentialCounts.filter { it.value > 1 }.keys.toList()
+                val folderToCategory = existingFolders.associateWith { getFolderCategory(it) }
+                val existingCatCounts = mutableMapOf<String, Int>()
+                existingFolders.forEach { folder ->
+                    val cat = folderToCategory[folder] ?: folder.name
+                    existingCatCounts[cat] = (existingCatCounts[cat] ?: 0) + folder.apps.size
+                }
+
+                // 1. Get all categories for all candidate (unfoldered) apps
+                val candidateApps = apps.filter { !folderedPackageNames.contains(it.activityInfo.packageName) }
+                val candidateAppToCategories = candidateApps.associateWith { getAppCategories(it.activityInfo.packageName) }
+
+                // 2. Count total potential members for each category (existing + candidate)
+                val potentialCounts = mutableMapOf<String, Int>()
+                existingCatCounts.forEach { (cat, count) ->
+                    potentialCounts[cat] = count
+                }
+                candidateAppToCategories.values.flatten().forEach { cat ->
+                    potentialCounts[cat] = (potentialCounts[cat] ?: 0) + 1
+                }
+
+                // 3. Keep categories that have at least 2 potential members or an existing folder
+                val validCategories = potentialCounts.filter { (cat, count) ->
+                    count > 1 || existingCatCounts.containsKey(cat)
+                }.keys.toList()
 
                 val publisherCategories = FolderCategories.PUBLISHER_CATEGORIES
 
@@ -1034,17 +1063,19 @@ class MainActivity : AppCompatActivity() {
                     }
                     val functionalCats = appCats.filter { it !in publisherCategories }
                     val targetCats = functionalCats.ifEmpty { appCats }
-                    return targetCats.minByOrNull { currentAssignments[it]?.size ?: 0 }!!
+                    return targetCats.minByOrNull { cat ->
+                        (existingCatCounts[cat] ?: 0) + (currentAssignments[cat]?.size ?: 0)
+                    }!!
                 }
 
-                // 4. Initial Assignment: Least flexible apps first
-                val sortedApps = apps.sortedBy { app -> appToCategories[app]?.count { it in validCategories } ?: 0 }
+                // 4. Initial Assignment: Least flexible candidate apps first
+                val sortedCandidateApps = candidateApps.sortedBy { app -> candidateAppToCategories[app]?.count { it in validCategories } ?: 0 }
                 val assignments = mutableMapOf<String, MutableList<ResolveInfo>>()
                 val unassignedApps = mutableListOf<ResolveInfo>()
 
-                for (app in sortedApps) {
+                for (app in sortedCandidateApps) {
                     val pkgName = app.activityInfo.packageName
-                    val appCats = appToCategories[app]?.filter { it in validCategories } ?: emptyList()
+                    val appCats = candidateAppToCategories[app]?.filter { it in validCategories } ?: emptyList()
                     if (appCats.isEmpty() || isAppPinned(pkgName)) {
                         unassignedApps.add(app)
                     } else {
@@ -1053,35 +1084,40 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
 
-                // 5. Global Balancing logic (already optimized, but runs off-thread now)
+                // 5. Global Balancing logic
                 var changed: Boolean
                 var safetyCounter = 0
-                val maxIterations = apps.size * 2
+                val maxIterations = candidateApps.size * 2
                 
                 do {
                     changed = false
                     safetyCounter++
-                    val fromCats = assignments.keys.sortedByDescending { assignments[it]?.size ?: 0 }
+                    val fromCats = assignments.keys.sortedByDescending { cat ->
+                        (existingCatCounts[cat] ?: 0) + (assignments[cat]?.size ?: 0)
+                    }
                     for (fromCat in fromCats) {
-                        val fromApps = assignments[fromCat] ?: continue
-                        if (fromApps.size <= 2) continue
-                        val toCats = validCategories.sortedBy { assignments[it]?.size ?: 0 }
+                        val fromCandidateApps = assignments[fromCat] ?: continue
+                        val fromTotal = (existingCatCounts[fromCat] ?: 0) + fromCandidateApps.size
+                        if (fromTotal <= 2 || fromCandidateApps.isEmpty()) continue
+                        val toCats = validCategories.sortedBy { cat ->
+                            (existingCatCounts[cat] ?: 0) + (assignments[cat]?.size ?: 0)
+                        }
                         for (toCat in toCats) {
                             if (fromCat == toCat) continue
-                            val toAppsSize = assignments[toCat]?.size ?: 0
-                            if (fromApps.size > toAppsSize + 1) {
-                                val movableApp = fromApps.find { app ->
+                            val toTotal = (existingCatCounts[toCat] ?: 0) + (assignments[toCat]?.size ?: 0)
+                            if (fromTotal > toTotal + 1) {
+                                val movableApp = fromCandidateApps.find { app ->
                                     val pkgName = app.activityInfo.packageName
                                     val label = app.loadLabel(packageManager).toString().lowercase()
                                     val isMainGoogleApp = pkgName == "com.google.android.googlequicksearchbox" || label == "google"
-                                    val cats = appToCategories[app] ?: emptyList()
+                                    val cats = candidateAppToCategories[app] ?: emptyList()
                                     cats.contains(toCat) &&
                                         !(fromCat == FolderCategories.COMMUNICATION && cats.contains(FolderCategories.COMMUNICATION)) &&
                                         !(fromCat == FolderCategories.BROWSERS && cats.contains(FolderCategories.BROWSERS)) &&
                                         !(fromCat == FolderCategories.GOOGLE && isMainGoogleApp)
                                 }
                                 if (movableApp != null) {
-                                    fromApps.remove(movableApp)
+                                    fromCandidateApps.remove(movableApp)
                                     assignments.getOrPut(toCat) { mutableListOf() }.add(movableApp)
                                     changed = true
                                     break
@@ -1092,27 +1128,49 @@ class MainActivity : AppCompatActivity() {
                     }
                 } while (changed && safetyCounter < maxIterations)
                 
-                Triple(assignments, unassignedApps, validCategories)
+                // 6. Merge newly assigned candidate apps into existing folders or create new folders
+                val updatedExistingFolders = existingFolders.map { Folder(it.name, it.apps.toMutableList()) }
+                val newFolders = mutableListOf<Folder>()
+
+                assignments.keys.sorted().forEach { category ->
+                    val groupApps = assignments[category] ?: return@forEach
+                    if (groupApps.isEmpty()) return@forEach
+
+                    val matchingFolders = updatedExistingFolders.filter { folder ->
+                        folderToCategory[folder] == category
+                    }
+
+                    if (matchingFolders.isNotEmpty()) {
+                        groupApps.forEach { candidateApp ->
+                            val targetFolder = matchingFolders.minByOrNull { it.apps.size }!!
+                            val pkg = candidateApp.activityInfo.packageName
+                            if (!targetFolder.apps.contains(pkg)) {
+                                targetFolder.apps.add(pkg)
+                            }
+                        }
+                    } else if (groupApps.size > 1) {
+                        val packageNames = groupApps.map { it.activityInfo.packageName }.toMutableList()
+                        newFolders.add(Folder(category, packageNames))
+                    } else {
+                        unassignedApps.addAll(groupApps)
+                    }
+                }
+
+                Triple(updatedExistingFolders.filter { it.apps.isNotEmpty() }, newFolders, unassignedApps)
             }
 
-            val assignments = result.first
-            val unassignedApps = result.second
+            val finalExistingFolders = result.first
+            val newFolders = result.second
+            val unassignedApps = result.third
 
-            // 6. Build new items list on Main thread
+            // 7. Build new items list on Main thread
             val newItems = mutableListOf<Any>()
             if (actionItem != null) {
                 newItems.add(actionItem)
             }
 
-            assignments.keys.sorted().forEach { category ->
-                val groupApps = assignments[category] ?: return@forEach
-                if (groupApps.size > 1) {
-                    val packageNames = groupApps.map { it.activityInfo.packageName }.toMutableList()
-                    newItems.add(Folder(category, packageNames))
-                } else {
-                    unassignedApps.addAll(groupApps)
-                }
-            }
+            newItems.addAll(finalExistingFolders)
+            newItems.addAll(newFolders)
 
             val (pinnedApps, nonPinnedApps) = unassignedApps.partition { isAppPinned(it.activityInfo.packageName) }
 
