@@ -1231,21 +1231,6 @@ class MainActivity : AppCompatActivity() {
                 iconCache.keys.retainAll(installedPackages)
                 labelCache.keys.retainAll(installedPackages)
 
-                // Pre-warm icons and labels on IO thread
-                installed.forEach { app ->
-                    val pkg = app.activityInfo.packageName
-                    if (!iconCache.containsKey(pkg)) {
-                        try {
-                            iconCache[pkg] = app.loadIcon(packageManager)
-                        } catch (_: Exception) {}
-                    }
-                    if (!labelCache.containsKey(pkg)) {
-                        try {
-                            labelCache[pkg] = app.loadLabel(packageManager).toString()
-                        } catch (_: Exception) {}
-                    }
-                }
-
                 installed to newAppMap
             }
             cachedApps = appMap
@@ -1315,7 +1300,33 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            withContext(Dispatchers.IO) { saveAppOrder() }
+            // Pre-warm icons and labels in the background after UI adapter is attached so launcher displays instantly
+            withContext(Dispatchers.IO) {
+                saveAppOrder()
+
+                var newlyCached = false
+                apps.forEach { app ->
+                    val pkg = app.activityInfo.packageName
+                    if (!iconCache.containsKey(pkg)) {
+                        try {
+                            iconCache[pkg] = app.loadIcon(packageManager)
+                            newlyCached = true
+                        } catch (_: Exception) {}
+                    }
+                    if (!labelCache.containsKey(pkg)) {
+                        try {
+                            labelCache[pkg] = app.loadLabel(packageManager).toString()
+                            newlyCached = true
+                        } catch (_: Exception) {}
+                    }
+                }
+
+                if (newlyCached) {
+                    withContext(Dispatchers.Main) {
+                        appsList.adapter?.notifyDataSetChanged()
+                    }
+                }
+            }
         }
     }
 
