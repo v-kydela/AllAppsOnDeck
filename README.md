@@ -20,6 +20,10 @@ Launchers like Nova Launcher sell themselves on the idea of customizability, but
 
 All Apps On Deck contains an actions menu with buttons for one-time tasks. Its crowning achievement is the "Auto Organize" button, which intelligently sorts all your apps into folders for you so you don't have to do it manually. Enjoy!
 
+## Simplified Manual Organization
+
+With typical launchers, dragging/dropping apps has a certain `ItemTouchHelper` behavior where item positions move during the drag in order to preview what the positions will be after the drop. This makes for a slippery situation when you try to drag an app onto a folder, since the folder will keep sliding out of the drop zone before you can release the drag. In All Apps on Deck, nothing moves until after you drop the item just where you want it.
+
 ### Disclaimer
 
-Most of the code in this repo was written by Google Gemini. I know this might reflect badly on me as a developer, but developers need to make sure they're proficient with a large variety of tools, and in the current world that includes AI tools. Hopefully having one or two AI-assisted repos does not invalidate my entire set of repos, most of which were written by hand. I made this launcher for myself and I use it daily, so I'm putting it here in case others would like to try it as well.
+Most of the code in this repo was written by Google Gemini.
